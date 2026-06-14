@@ -15,12 +15,19 @@ class Colors:
 
 class TradeTycoon:
     def __init__(self):
-        # Force the save file to always be in the exact same folder as this python script
-        self.save_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_tycoon_save.json")
+        # --- PYINSTALLER SAFE PATH LOGIC ---
+        if getattr(sys, 'frozen', False):
+            # If running as a compiled .exe, get the path of the .exe itself
+            application_path = os.path.dirname(sys.executable)
+        else:
+            # If running normally through Python, get the path of this script
+            application_path = os.path.dirname(os.path.abspath(__file__))
+            
+        self.save_file = os.path.join(application_path, "trade_tycoon_save.json")
 
         # Trigger the initial state on load with default values
         self.reset_game_state()
-
+        
     def reset_game_state(self, bonus_gp=0, kept_artifact=None, kept_qty=0):
         # --- Single Source of Truth for Game Variables ---
         self.run_id = random.randint(99999, 9999999)
