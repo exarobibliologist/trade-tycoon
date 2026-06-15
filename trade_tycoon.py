@@ -22,12 +22,12 @@ class TradeTycoon:
         else:
             # If running normally through Python, get the path of this script
             application_path = os.path.dirname(os.path.abspath(__file__))
-            
+
         self.save_file = os.path.join(application_path, "trade_tycoon_save.json")
 
         # Trigger the initial state on load with default values
         self.reset_game_state()
-        
+
     def reset_game_state(self, bonus_gp=0, kept_artifact=None, kept_qty=0):
         # --- Single Source of Truth for Game Variables ---
         self.run_id = random.randint(99999, 9999999)
@@ -309,7 +309,7 @@ class TradeTycoon:
             elif chosen_event == 7:
                 # 7. GUILD SUBSIDY
                 if self.locked_items:
-                    self.unlock_cost = self.unlock_cost // 5
+                    self.unlock_cost = self.unlock_cost // 10
                     if self.unlock_cost < 10000:
                         self.unlock_cost = 10000
                     guild_good_msgs = [
@@ -323,7 +323,7 @@ class TradeTycoon:
             elif chosen_event == 8:
                 # 8. GUILD MONOPOLY
                 if self.locked_items:
-                    self.unlock_cost *= 2
+                    self.unlock_cost = int(self.unlock_cost * 1.75)
                     guild_bad_msgs = [
                         "GUILD MONOPOLY! The Merchant's Guild has restricted trade. Unlock costs have surged!",
                         "INFLATION! A poor harvest has driven up the price of everything, including unlock fees!"
@@ -807,7 +807,7 @@ class TradeTycoon:
                                             self.average_cost[item] = 0
 
                                         targets = [m for m in self.current_market if m not in self.artifacts]
-                                        impact_qty = len(targets) // 4
+                                        impact_qty = len(targets) // 2
 
                                         if impact_qty < 1 and len(targets) >= 2:
                                             impact_qty = 1
@@ -818,7 +818,7 @@ class TradeTycoon:
                                             crashes = affected[impact_qty:]
 
                                             for moon in moons:
-                                                multiplier = random.randint(5, 20)
+                                                multiplier = random.randint(25, 50)
                                                 baseline = 100 + (self.unlocked_count * 10)
                                                 self.market_prices[moon] = (self.market_prices[moon] * multiplier) + baseline
 
@@ -861,11 +861,9 @@ class TradeTycoon:
                                                     self.average_cost[target_item] = 0
 
                                                 current_qty = self.inventory.get(target_item, 0)
-                                                current_avg = self.average_cost.get(target_item, 0)
-                                                current_total_value = current_qty * current_avg
+
                                                 new_qty = current_qty + 10000
 
-                                                self.average_cost[target_item] = current_total_value // new_qty if new_qty > 0 else 0
                                                 self.inventory[target_item] = new_qty
 
                                                 self.current_events.append(f"ARTIFACT INVOKED: Political Favors - The Crown granted you 10,000 {target_item}!")
@@ -1029,7 +1027,7 @@ class TradeTycoon:
                             self.average_cost[new_item] = 0
 
                         self.unlocked_count += 1
-                        self.unlock_cost = self.unlock_cost + (self.unlock_cost // 2)
+                        self.unlock_cost = int(self.unlock_cost * 1.5)
                         self.current_market.append(new_item)
 
                         total_artifacts = sum(self.inventory.get(art, 0) for art in self.artifacts)
