@@ -138,12 +138,12 @@ class TradeTycoon:
 
     def roll_for_artifact(self, market_hash, is_grand_market=False):
         # --- SEED-LOCKED ARTIFACT GENERATION ---
-        if int(market_hash[0:2], 16) < 64: # <-- Controls how often artifacts spawn
+        if int(market_hash[0:2], 16) < 80: # <-- Controls how often artifacts spawn
             spawned_artifact = random.choice(self.artifacts)
 
             self.current_market.append(spawned_artifact)
             self.market_prices[spawned_artifact] = 0 # Initialized to 0, synced globally right after
-            self.artifact_stock[spawned_artifact] = 20 # <-- Controls the number of artifacts in each spawn
+            self.artifact_stock[spawned_artifact] = 10 # <-- Controls the number of artifacts in each spawn
 
             market_type = "GRAND MARKET" if is_grand_market else "MARKET"
             self.current_events.append(f"A LEGENDARY ARTIFACT HAS APPEARED IN THE {market_type}: {spawned_artifact}")
@@ -158,7 +158,6 @@ class TradeTycoon:
 
         seed_string = f"run_{self.run_id}_money_{self.money}_score_{self.total_score}_unlocked_{self.unlocked_count}_arts_{total_artifacts}_week_{self.week}"
         seed_string_two = f"run_{self.run_id}_week_{self.week}_score_{self.total_score}_unlocked_{self.unlocked_count}_money_{self.money}"
-
 
         # Pass BOTH strings into the function
         market_hash = self.get_market_hash(seed_string, seed_string_two)
@@ -186,7 +185,7 @@ class TradeTycoon:
         # --- NEW EVENT POOL LOGIC ---
         event_pool = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-        for _ in range(3): # Maximum of 3 events per week
+        for _ in range(5): # Maximum of 5 events per week
             # 50% chance to stop drawing events immediately
             if random.randint(0, 1) == 0:
                 break
@@ -247,7 +246,7 @@ class TradeTycoon:
                 targets = [m for m in self.current_market if m not in self.artifacts]
                 if targets:
                     e_item = random.choice(targets)
-                    self.market_prices[e_item] = (self.market_prices[e_item] // self.week) + 1
+                    self.market_prices[e_item] = 1
                     crash_msgs = [
                         f"MARKET CRASH! A massive surplus of {e_item} has flooded the market!",
                         f"MARKET CRASH! The King suddenly outlawed {e_item}! Merchants are dumping their stock!",
@@ -257,19 +256,19 @@ class TradeTycoon:
 
             elif chosen_event == 4:
                 # 4. FORTUNE (COIN)
-                found = (random.randint(10, 1499) * self.week) + (self.unlocked_count * 200)
+                found = (random.randint(50, 1500) * self.week) + (self.unlocked_count * 200)
                 self.money += found
                 gold_msgs = [
-                    f"FORTUNE! You found a discarded coin purse containing ${found:,} on the floor of your store.",
-                    f"FORTUNE! A grateful noble tipped you ${found:,} for giving them good financial advice.",
-                    f"FORTUNE! You won a tavern bet against a drunken knight and walked away with ${found:,}!"
+                    f"MONEY! You found a discarded coin purse containing ${found:,} on the floor of your store.",
+                    f"MONEY! A grateful noble tipped you ${found:,} for giving them good financial advice.",
+                    f"MONEY! You won a tavern bet against a drunken knight and walked away with ${found:,}!"
                 ]
                 self.current_events.append(random.choice(gold_msgs))
 
             elif chosen_event == 5:
                 # 5. FORTUNE (UNLOCKED ITEMS)
                 f_item = random.choice(self.active_items)
-                f_qty = (random.randint(10, 20) * self.week) + (self.unlocked_count * 5)
+                f_qty = (random.randint(50, 100) * self.week) + (self.unlocked_count * 5)
                 current_qty = self.inventory[f_item]
                 current_avg = self.average_cost[f_item]
                 current_total_value = current_qty * current_avg
@@ -301,15 +300,15 @@ class TradeTycoon:
                 self.average_cost[f_item] = current_total_value // new_qty if new_qty > 0 else 0
                 self.inventory[f_item] = new_qty
                 magic_msgs = [
-                    f"BONUS! A mischievous forest fairy gifted you {f_qty:,} {f_item}!",
-                    f"BONUS! You rubbed a strange lamp and you got {f_qty:,} {f_item}!"
+                    f"KAZAAM! A mischievous forest fairy gifted you {f_qty:,} {f_item}!",
+                    f"KAZAAM! You rubbed a strange lamp and you got {f_qty:,} {f_item}!"
                 ]
                 self.current_events.append(random.choice(magic_msgs))
 
             elif chosen_event == 7:
                 # 7. GUILD SUBSIDY
                 if self.locked_items:
-                    self.unlock_cost = self.unlock_cost // 10
+                    self.unlock_cost = self.unlock_cost // 20
                     if self.unlock_cost < 10000:
                         self.unlock_cost = 10000
                     guild_good_msgs = [
@@ -323,7 +322,7 @@ class TradeTycoon:
             elif chosen_event == 8:
                 # 8. GUILD MONOPOLY
                 if self.locked_items:
-                    self.unlock_cost = int(self.unlock_cost * 1.75)
+                    self.unlock_cost = int(self.unlock_cost * 1.5)
                     guild_bad_msgs = [
                         "GUILD MONOPOLY! The Merchant's Guild has restricted trade. Unlock costs have surged!",
                         "INFLATION! A poor harvest has driven up the price of everything, including unlock fees!"
@@ -350,7 +349,6 @@ class TradeTycoon:
                     ]
                     self.current_events.append(random.choice(item_ambush_msgs))
                 else:
-                    # Fallback to stealing money if they have no items
                     item_ambush_msgs = [
                         f"LUCKY BREAK! Bandits raided your shop but couldn't find anything to steal!",
                         f"LUCKY BREAK! Rats got into your supplies but you exterminated them before they did any damage!"
@@ -359,7 +357,7 @@ class TradeTycoon:
 
             elif chosen_event == 10:
                 # 10. AMBUSH (COINS)
-                lost = random.randint(10, 299) + 100 + (self.unlocked_count * 200)
+                lost = random.randint(50, 500) + 100 + (self.unlocked_count * 200)
                 if self.money < lost:
                     lost = self.money
                 self.money -= lost
@@ -515,7 +513,7 @@ class TradeTycoon:
                     print(f"   {Colors.GRAY}--- ↑ {max_scroll - self.event_scroll} older events ↑ ---{Colors.RESET}")
 
                 for event in visible_events:
-                    if event.startswith("BOUGHT") or event.startswith("SOLD"):
+                    if event.startswith("BOUGHT") or event.startswith("SOLD") or event.startswith("MULTI-"):
                         print(f"   {Colors.GREEN}( {event} ){Colors.RESET}")
                     elif event.startswith("GUILD PERMIT"):
                         print(f"   {Colors.GREEN}( +++ {event} +++ ){Colors.RESET}")
@@ -639,7 +637,8 @@ class TradeTycoon:
                 unlock_prompt = f"{Colors.MAGENTA}*** YOU WON! Everything Is Unlocked! [{Colors.YELLOW}P{Colors.MAGENTA}]restige? ***{Colors.RESET}"
 
             # Cleaned up action menu, removing the prompts that were shifted up
-            print(f"Actions: [{Colors.YELLOW}B{Colors.RESET}]uy | [{Colors.YELLOW}S{Colors.RESET}]ell/Use | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
+            # --- ADDED [M]ulti-Trade to prompt ---
+            print(f"Actions: [{Colors.YELLOW}B{Colors.RESET}]uy | [{Colors.YELLOW}S{Colors.RESET}]ell/Use | [{Colors.YELLOW}M{Colors.RESET}]ulti-Trade | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
 
             # --- NEW KEYPRESS CAPTURE ---
             print("What would you like to do? ", end="", flush=True)
@@ -830,7 +829,7 @@ class TradeTycoon:
                                             moon_str = ", ".join(moons)
                                             crash_str = ", ".join(crashes)
 
-                                            self.current_events.append(f"ARTIFACT INVOKED: {item} - {moon_str} skyrocketed while {crash_str} collapsed!")
+                                            self.current_events.append(f"ARTIFACT INVOKED: {item}")
                                         else:
                                             self.current_events.append(f"ARTIFACT INVOKED: {item} - The market was too small for a crisis.")
 
@@ -991,6 +990,113 @@ class TradeTycoon:
                     print("Invalid input! Please enter a number.")
                     time.sleep(1)
 
+            # --- NEW MULTI-TRADE LOGIC ---
+            elif action == 'm':
+                print("Do you want to multi-[B]uy or multi-[S]ell? ", end="", flush=True)
+                trade_type = self.get_keypress()
+
+                # We need to manually print the character since get_keypress is completely silent
+                if trade_type not in ['left', 'right', 'up', 'down', '']:
+                    print(trade_type.upper())
+                else:
+                    print()
+
+                if trade_type not in ['b', 's']:
+                    print("Invalid selection. Press B or S.")
+                    time.sleep(1)
+                    continue
+
+                action_word = "buy" if trade_type == 'b' else "sell"
+                item_input = input(f"Which item numbers do you want to {action_word}? (Comma separated list, e.g. 5,6,12): ")
+
+                try:
+                    # Safely parse the comma-separated list into indices
+                    indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
+                    # Filter out invalid indices AND specifically exclude Artifacts from multi-trade
+                    valid_items = [display_items[i] for i in indices if 0 <= i < len(display_items) and display_items[i] not in self.artifacts]
+                except ValueError:
+                    print("Invalid input format.")
+                    time.sleep(1)
+                    continue
+
+                if not valid_items:
+                    print(f"No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
+                    time.sleep(2)
+                    continue
+
+                amount_input = input(f"How much do you want to {'spend of your total budget' if trade_type == 'b' else 'sell of each item'}? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
+
+                if amount_input in ['a', 'all']: fraction = 1.0
+                elif amount_input in ['h', 'half']: fraction = 0.5
+                elif amount_input in ['q', 'quarter']: fraction = 0.25
+                else:
+                    print("Invalid amount.")
+                    time.sleep(1)
+                    continue
+
+                total_trades = 0
+                total_value = 0
+
+                if trade_type == 's':
+                    for item in valid_items:
+                        if item in self.market_prices:
+                            max_qty = self.inventory.get(item, 0)
+                            qty = int(max_qty * fraction)
+                            if qty > 0:
+                                price = self.market_prices[item]
+                                revenue = price * qty
+                                self.money += revenue
+                                self.total_score += revenue
+                                self.inventory[item] -= qty
+                                if self.inventory[item] == 0:
+                                    self.average_cost[item] = 0
+                                total_trades += 1
+                                total_value += revenue
+
+                    if total_trades > 0:
+                        self.current_events.append(f"MULTI-SELL: Sold {total_trades} different commodity types for a total of ${total_value:,}!")
+                    else:
+                        print("You do not have enough inventory of those items to sell.")
+                        time.sleep(1)
+
+                elif trade_type == 'b':
+                    # Only buy items that are actually currently listed in the market
+                    buyable_items = [item for item in valid_items if item in self.market_prices]
+
+                    if buyable_items:
+                        # Find exactly how much money we are allocating for this mass purchase
+                        total_budget = int(self.money * fraction)
+
+                        # Divide that budget evenly among the selected items
+                        budget_per_item = total_budget // len(buyable_items)
+
+                        for item in buyable_items:
+                            price = self.market_prices[item]
+                            qty = budget_per_item // price
+
+                            if qty > 0:
+                                cost = price * qty
+                                current_qty = self.inventory.get(item, 0)
+                                current_avg = self.average_cost.get(item, 0)
+                                new_qty = current_qty + qty
+
+                                new_total_value = (current_qty * current_avg) + cost
+                                self.average_cost[item] = new_total_value // new_qty
+
+                                self.money -= cost
+                                self.inventory[item] = new_qty
+                                total_trades += 1
+                                total_value += cost
+
+                        if total_trades > 0:
+                            self.current_events.append(f"MULTI-BUY: Bought {total_trades} different commodity types for a total of ${total_value:,}!")
+                        else:
+                            print("Your allocated budget per item isn't enough to afford the selected goods.")
+                            time.sleep(2)
+                    else:
+                        print("None of those selected items are currently available in the market.")
+                        time.sleep(2)
+
             elif action == 'w':
                 self.week += 1
                 self.generate_market()
@@ -1027,7 +1133,7 @@ class TradeTycoon:
                             self.average_cost[new_item] = 0
 
                         self.unlocked_count += 1
-                        self.unlock_cost = int(self.unlock_cost * 1.5)
+                        self.unlock_cost = int(self.unlock_cost * 1.25)
                         self.current_market.append(new_item)
 
                         total_artifacts = sum(self.inventory.get(art, 0) for art in self.artifacts)
@@ -1079,11 +1185,11 @@ class TradeTycoon:
                     print(f"   {Colors.MAGENTA}*** PRESTIGE ***{Colors.RESET}")
                     print("=" * 200)
 
-                    bonus_gp = int(self.total_score ** (1/3.0))
+                    bonus_gp = int(self.total_score ** (1/4.0))
 
                     print(f" You have cornered the market and unlocked every good in the realm!")
                     print(f" If you Prestige, your empire will reset, but you will retain the following perks:")
-                    print(f"   - {Colors.YELLOW}Extra Starting Wealth:{Colors.RESET} +${bonus_gp:,} (Cube root of your {self.total_score:,} final score)")
+                    print(f"   - {Colors.YELLOW}Extra Starting Wealth:{Colors.RESET} +${bonus_gp:,} (Bonus from getting a high score of {self.total_score:,})")
                     print(f"   - {Colors.MAGENTA}Legendary Heirloom:{Colors.RESET} Keep your entire collected stack of 1 Artifact type (minimum 1)")
                     print("\n Are you ready to pass the torch to the next generation?")
 
@@ -1094,7 +1200,7 @@ class TradeTycoon:
                             print(f" [{idx + 1}] {art}")
 
                         try:
-                            art_choice = int(input(" Enter number (1-3): ")) - 1
+                            art_choice = int(input(" Enter number (1-4): ")) - 1
                             if 0 <= art_choice < len(self.artifacts):
                                 chosen_art = self.artifacts[art_choice]
                             else:
