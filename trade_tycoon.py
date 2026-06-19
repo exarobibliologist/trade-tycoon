@@ -640,7 +640,7 @@ class TradeTycoon:
         else:
             unlock_prompt = f"{Colors.MAGENTA}*** YOU WON! Everything Is Unlocked! [{Colors.YELLOW}P{Colors.MAGENTA}]restige? ***{Colors.RESET}"
 
-        print(f"Actions: [{Colors.YELLOW}B{Colors.RESET}]uy | [{Colors.YELLOW}S{Colors.RESET}]ell/Use | [{Colors.YELLOW}M{Colors.RESET}]ulti-Trade | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
+        print(f"Actions: [{Colors.YELLOW}B{Colors.RESET}]uy | [{Colors.YELLOW}S{Colors.RESET}]ell/Use | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
 
     def interactive_input(self, prompt_text):
         """ A completely custom input engine that allows screen redrawing during typing! """
@@ -707,11 +707,19 @@ class TradeTycoon:
             self.event_scroll = 0 # Auto-snap to bottom on new action
 
             if action == 'b':
-                item_input = self.interactive_input(f"Enter item number to buy (1-{len(self.display_items)}): ")
+                item_input = self.interactive_input(f"Enter item number(s) to buy (single or comma-separated, e.g., 1,3,5): ")
                 if not item_input: continue
 
                 try:
-                    item_idx = int(item_input) - 1
+                    indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
+                except ValueError:
+                    print("Invalid input format.")
+                    time.sleep(1)
+                    continue
+
+                if len(indices) == 1:
+                    # --- SINGLE BUY LOGIC ---
+                    item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
 
@@ -751,7 +759,6 @@ class TradeTycoon:
                                             self.current_market.remove(item)
                                             del self.market_prices[item]
                                             self.current_events.append(f"MARKET UPDATE: The market has sold out of {item} for this week!")
-
                                 else:
                                     print("Invalid quantity or not enough money!")
                                     time.sleep(1)
@@ -764,16 +771,80 @@ class TradeTycoon:
                     else:
                         print("Invalid item number!")
                         time.sleep(1)
-                except ValueError:
-                    print("Invalid input! Please enter a number.")
-                    time.sleep(1)
+
+                elif len(indices) > 1:
+                    # --- MULTI BUY LOGIC ---
+                    valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
+                    
+                    if not valid_items:
+                        print(f"No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
+                        time.sleep(2)
+                        continue
+
+                    amount_input = self.interactive_input(f"How much of your budget do you want to spend? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
+                    
+                    if amount_input in ['a', 'all']: fraction = 1.0
+                    elif amount_input in ['h', 'half']: fraction = 0.5
+                    elif amount_input in ['q', 'quarter']: fraction = 0.25
+                    else:
+                        print("Invalid amount.")
+                        time.sleep(1)
+                        continue
+
+                    buyable_items = [item for item in valid_items if item in self.market_prices]
+                    
+                    if buyable_items:
+                        total_budget = int(self.money * fraction)
+                        budget_per_item = total_budget // len(buyable_items)
+                        
+                        total_trades = 0
+                        total_value = 0
+                        trade_details = []
+
+                        for item in buyable_items:
+                            price = self.market_prices[item]
+                            qty = budget_per_item // price
+                            
+                            if qty > 0:
+                                cost = price * qty
+                                current_qty = self.inventory.get(item, 0)
+                                current_avg = self.average_cost.get(item, 0)
+                                new_qty = current_qty + qty
+                                
+                                new_total_value = (current_qty * current_avg) + cost
+                                self.average_cost[item] = new_total_value // new_qty
+                                
+                                self.money -= cost
+                                self.inventory[item] = new_qty
+                                
+                                total_trades += 1
+                                total_value += cost
+                                trade_details.append(f"{qty:,}x {item}")
+
+                        if total_trades > 0:
+                            details_str = ", ".join(trade_details)
+                            self.current_events.append(f"MULTI-BUY: Bought ({details_str}) for a total of ${total_value:,}!")
+                        else:
+                            print("Your allocated budget per item isn't enough to afford the selected goods.")
+                            time.sleep(2)
+                    else:
+                        print("None of those selected items are currently available in the market.")
+                        time.sleep(2)
 
             elif action == 's':
-                item_input = self.interactive_input(f"Enter item number to sell/use (1-{len(self.display_items)}): ")
+                item_input = self.interactive_input(f"Enter item number(s) to sell/use (single or comma-separated, e.g., 1,3,5): ")
                 if not item_input: continue
 
                 try:
-                    item_idx = int(item_input) - 1
+                    indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
+                except ValueError:
+                    print("Invalid input format.")
+                    time.sleep(1)
+                    continue
+
+                if len(indices) == 1:
+                    # --- SINGLE SELL/USE LOGIC ---
+                    item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
 
@@ -1025,51 +1096,30 @@ class TradeTycoon:
                     else:
                         print("Invalid item number!")
                         time.sleep(1)
-                except ValueError:
-                    print("Invalid input! Please enter a number.")
-                    time.sleep(1)
 
-            # --- NEW MULTI-TRADE LOGIC ---
-            elif action == 'm':
-                trade_type = self.interactive_input("Do you want to multi-[B]uy or multi-[S]ell? (B/S): ").strip().lower()
-
-                if trade_type not in ['b', 's']:
-                    print("Invalid selection. Press B or S.")
-                    time.sleep(1)
-                    continue
-
-                action_word = "buy" if trade_type == 'b' else "sell"
-                item_input = self.interactive_input(f"Which item numbers do you want to {action_word}? (Comma separated list, e.g. 5,6,12): ")
-
-                try:
-                    # Safely parse the comma-separated list into indices
-                    indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
-                    # Filter out invalid indices AND specifically exclude Artifacts from multi-trade
+                elif len(indices) > 1:
+                    # --- MULTI SELL LOGIC ---
                     valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
-                except ValueError:
-                    print("Invalid input format.")
-                    time.sleep(1)
-                    continue
+                    
+                    if not valid_items:
+                        print(f"No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
+                        time.sleep(2)
+                        continue
 
-                if not valid_items:
-                    print(f"No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
-                    time.sleep(2)
-                    continue
+                    amount_input = self.interactive_input(f"How much of each item do you want to sell? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
+                    
+                    if amount_input in ['a', 'all']: fraction = 1.0
+                    elif amount_input in ['h', 'half']: fraction = 0.5
+                    elif amount_input in ['q', 'quarter']: fraction = 0.25
+                    else:
+                        print("Invalid amount.")
+                        time.sleep(1)
+                        continue
 
-                amount_input = self.interactive_input(f"How much do you want to {'spend of your total budget' if trade_type == 'b' else 'sell of each item'}? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
+                    total_trades = 0
+                    total_value = 0
+                    trade_details = []
 
-                if amount_input in ['a', 'all']: fraction = 1.0
-                elif amount_input in ['h', 'half']: fraction = 0.5
-                elif amount_input in ['q', 'quarter']: fraction = 0.25
-                else:
-                    print("Invalid amount.")
-                    time.sleep(1)
-                    continue
-
-                total_trades = 0
-                total_value = 0
-
-                if trade_type == 's':
                     for item in valid_items:
                         if item in self.market_prices:
                             max_qty = self.inventory.get(item, 0)
@@ -1082,48 +1132,17 @@ class TradeTycoon:
                                 self.inventory[item] -= qty
                                 if self.inventory[item] == 0:
                                     self.average_cost[item] = 0
+                                
                                 total_trades += 1
                                 total_value += revenue
-
+                                trade_details.append(f"{qty:,}x {item}")
+                                
                     if total_trades > 0:
-                        self.current_events.append(f"MULTI-SELL: Sold {total_trades} different commodity types for a total of ${total_value:,}!")
+                        details_str = ", ".join(trade_details)
+                        self.current_events.append(f"MULTI-SELL: Sold ({details_str}) for a total of ${total_value:,}!")
                     else:
                         print("You do not have enough inventory of those items to sell.")
                         time.sleep(1)
-
-                elif trade_type == 'b':
-                    buyable_items = [item for item in valid_items if item in self.market_prices]
-
-                    if buyable_items:
-                        total_budget = int(self.money * fraction)
-                        budget_per_item = total_budget // len(buyable_items)
-
-                        for item in buyable_items:
-                            price = self.market_prices[item]
-                            qty = budget_per_item // price
-
-                            if qty > 0:
-                                cost = price * qty
-                                current_qty = self.inventory.get(item, 0)
-                                current_avg = self.average_cost.get(item, 0)
-                                new_qty = current_qty + qty
-
-                                new_total_value = (current_qty * current_avg) + cost
-                                self.average_cost[item] = new_total_value // new_qty
-
-                                self.money -= cost
-                                self.inventory[item] = new_qty
-                                total_trades += 1
-                                total_value += cost
-
-                        if total_trades > 0:
-                            self.current_events.append(f"MULTI-BUY: Bought {total_trades} different commodity types for a total of ${total_value:,}!")
-                        else:
-                            print("Your allocated budget per item isn't enough to afford the selected goods.")
-                            time.sleep(2)
-                    else:
-                        print("None of those selected items are currently available in the market.")
-                        time.sleep(2)
 
             elif action == 'w':
                 self.week += 1
