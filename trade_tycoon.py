@@ -334,7 +334,7 @@ class TradeTycoon:
             elif chosen_event == 8:
                 # 8. GUILD MONOPOLY
                 if self.locked_items:
-                    self.unlock_cost = int(self.unlock_cost * 1.5)
+                    self.unlock_cost = int(self.unlock_cost * 2)
                     guild_bad_msgs = [
                         "GUILD MONOPOLY! The Merchant's Guild has restricted trade. Unlock costs have surged!",
                         "INFLATION! A poor harvest has driven up the price of everything, including unlock fees!"
@@ -640,6 +640,7 @@ class TradeTycoon:
         else:
             unlock_prompt = f"{Colors.MAGENTA}*** YOU WON! Everything Is Unlocked! [{Colors.YELLOW}P{Colors.MAGENTA}]restige? ***{Colors.RESET}"
 
+        # Cleaned up action menu, removing the prompts that were shifted up
         print(f"Actions: [{Colors.YELLOW}B{Colors.RESET}]uy | [{Colors.YELLOW}S{Colors.RESET}]ell/Use | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
 
     def interactive_input(self, prompt_text):
@@ -707,19 +708,50 @@ class TradeTycoon:
             self.event_scroll = 0 # Auto-snap to bottom on new action
 
             if action == 'b':
-                item_input = self.interactive_input(f"Enter item number(s) to buy (single or comma-separated, e.g., 1,3,5): ")
+                item_input = self.interactive_input(f"Enter item number(s) to buy, or [E]asy Mode: ").strip().lower()
                 if not item_input: continue
 
-                try:
-                    indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
-                except ValueError:
-                    print("Invalid input format.")
-                    time.sleep(1)
-                    continue
+                is_multi = False
+                valid_items = []
+                item_idx = -1
 
-                if len(indices) == 1:
+                if item_input == 'e':
+                    # EASY MODE: Select items not owned OR where market price < average cost
+                    valid_items = [
+                        item for item in self.display_items 
+                        if item not in self.artifacts 
+                        and item in self.market_prices 
+                        and (self.inventory.get(item, 0) == 0 or self.market_prices[item] < self.average_cost.get(item, 0))
+                    ]
+                    if not valid_items:
+                        print("Easy Mode found no deals (no items are cheaper than your average cost or unowned).")
+                        time.sleep(2)
+                        continue
+                    is_multi = True
+                else:
+                    try:
+                        indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
+                    except ValueError:
+                        print("Invalid input format.")
+                        time.sleep(1)
+                        continue
+
+                    if not indices:
+                        continue
+
+                    if len(indices) == 1:
+                        item_idx = indices[0]
+                        is_multi = False
+                    else:
+                        valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
+                        if not valid_items:
+                            print("No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
+                            time.sleep(2)
+                            continue
+                        is_multi = True
+
+                if not is_multi:
                     # --- SINGLE BUY LOGIC ---
-                    item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
 
@@ -772,16 +804,10 @@ class TradeTycoon:
                         print("Invalid item number!")
                         time.sleep(1)
 
-                elif len(indices) > 1:
+                else:
                     # --- MULTI BUY LOGIC ---
-                    valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
-                    
-                    if not valid_items:
-                        print(f"No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
-                        time.sleep(2)
-                        continue
-
-                    amount_input = self.interactive_input(f"How much of your budget do you want to spend? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
+                    prompt_prefix = f"Easy Mode selected {len(valid_items)} items! " if item_input == 'e' else ""
+                    amount_input = self.interactive_input(f"{prompt_prefix}How much of your budget do you want to spend? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
                     
                     if amount_input in ['a', 'all']: fraction = 1.0
                     elif amount_input in ['h', 'half']: fraction = 0.5
@@ -832,19 +858,51 @@ class TradeTycoon:
                         time.sleep(2)
 
             elif action == 's':
-                item_input = self.interactive_input(f"Enter item number(s) to sell/use (single or comma-separated, e.g., 1,3,5): ")
+                item_input = self.interactive_input(f"Enter item number(s) to sell/use, or [E]asy Mode: ").strip().lower()
                 if not item_input: continue
 
-                try:
-                    indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
-                except ValueError:
-                    print("Invalid input format.")
-                    time.sleep(1)
-                    continue
+                is_multi = False
+                valid_items = []
+                item_idx = -1
 
-                if len(indices) == 1:
+                if item_input == 'e':
+                    # EASY MODE: Select items where owned > 0 AND market price > average cost
+                    valid_items = [
+                        item for item in self.display_items 
+                        if item not in self.artifacts 
+                        and item in self.market_prices 
+                        and self.inventory.get(item, 0) > 0 
+                        and self.market_prices[item] > self.average_cost.get(item, 0)
+                    ]
+                    if not valid_items:
+                        print("Easy Mode found no profitable items to sell.")
+                        time.sleep(2)
+                        continue
+                    is_multi = True
+                else:
+                    try:
+                        indices = [int(x.strip()) - 1 for x in item_input.split(',') if x.strip().isdigit()]
+                    except ValueError:
+                        print("Invalid input format.")
+                        time.sleep(1)
+                        continue
+
+                    if not indices:
+                        continue
+
+                    if len(indices) == 1:
+                        item_idx = indices[0]
+                        is_multi = False
+                    else:
+                        valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
+                        if not valid_items:
+                            print("No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
+                            time.sleep(2)
+                            continue
+                        is_multi = True
+
+                if not is_multi:
                     # --- SINGLE SELL/USE LOGIC ---
-                    item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
 
@@ -1097,16 +1155,10 @@ class TradeTycoon:
                         print("Invalid item number!")
                         time.sleep(1)
 
-                elif len(indices) > 1:
+                else:
                     # --- MULTI SELL LOGIC ---
-                    valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
-                    
-                    if not valid_items:
-                        print(f"No valid regular items selected (Note: Artifacts are excluded from multi-trade).")
-                        time.sleep(2)
-                        continue
-
-                    amount_input = self.interactive_input(f"How much of each item do you want to sell? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
+                    prompt_prefix = f"Easy Mode found {len(valid_items)} profitable items! " if item_input == 'e' else ""
+                    amount_input = self.interactive_input(f"{prompt_prefix}How much of each item do you want to sell? ([A]ll / [H]alf / [Q]uarter): ").strip().lower()
                     
                     if amount_input in ['a', 'all']: fraction = 1.0
                     elif amount_input in ['h', 'half']: fraction = 0.5
@@ -1177,7 +1229,7 @@ class TradeTycoon:
                             self.average_cost[new_item] = 0
 
                         self.unlocked_count += 1
-                        self.unlock_cost = int(self.unlock_cost * 1.2)
+                        self.unlock_cost = int(self.unlock_cost * 1.75)
                         self.current_market.append(new_item)
 
                         total_artifacts = sum(self.inventory.get(art, 0) for art in self.artifacts)
