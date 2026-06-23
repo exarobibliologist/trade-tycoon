@@ -11,6 +11,8 @@ The basic rules in the game can be summarized as follows:
 - Know when to use your artifacts
 - Your score is what determines how much your prestige with. Go for the highest score you can
 
+![Dominate the Market](https://github.com/exarobibliologist/trade-tycoon/blob/main/Dominate%20the%20Market.png?raw=true "Dominate the Market")
+
 ## Random
 Everything in the game uses a cryptographic seed to provide randomness.
 
