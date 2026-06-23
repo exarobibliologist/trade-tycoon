@@ -887,6 +887,9 @@ class TradeTycoon:
                         else:
                             print("Your allocated budget per item isn't enough to afford the selected goods.")
                             time.sleep(2)
+                    else:
+                        print("None of those selected items are currently available in the market.")
+                        time.sleep(2)
 
             elif action == 's':
                 item_input = self.interactive_input(f"Enter item number(s) to sell/use, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
@@ -960,7 +963,7 @@ class TradeTycoon:
                                                         sell_price = 1
 
                                                     smuggle_color = Colors.MAGENTA if smuggle_item in self.artifacts else self.get_price_color(sell_price)
-                                                    input_qty = self.interactive_input(f"How many {smuggle_color}{smuggle_item}{Colors.RESET} would you like to smuggle? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ", instant_keys=['a', 'h', 'q'])
+                                                    input_qty = self.interactive_input(f"How many {smuggle_color}{smuggle_item}{Colors.RESET} would you like to smuggle? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
                                                     qty = self.parse_qty(input_qty, max_qty)
 
                                                     if 0 < qty <= max_qty:
@@ -984,9 +987,9 @@ class TradeTycoon:
                                                             self.market_prices[smuggle_item] = sell_price
                                                             self.current_market.sort()
                                                             self.sync_artifact_prices()
-                                                            self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. The market now accepts {smuggle_item}! (Actions Reset to 1!)")
+                                                            self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. The market now accepts {smuggle_item}! (+1 Buy/Sell Action Granted!)")
                                                         else:
-                                                            self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. (Actions Reset to 1!)")
+                                                            self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. (+1 Buy/Sell Action Granted!)")
                                                     else:
                                                         print("Invalid quantity. Invocation cancelled.")
                                                         time.sleep(1)
@@ -1092,7 +1095,7 @@ class TradeTycoon:
                                                     source_price = self.market_prices.get(source_item, 1)
                                                     source_color = self.get_price_color(source_price)
 
-                                                    input_qty = self.interactive_input(f"How many {source_color}{source_item}{Colors.RESET} would you like to convert? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ", instant_keys=['a', 'h', 'q'])
+                                                    input_qty = self.interactive_input(f"How many {source_color}{source_item}{Colors.RESET} would you like to convert? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
                                                     qty = self.parse_qty(input_qty, max_qty)
 
                                                     if 0 < qty <= max_qty:
@@ -1165,6 +1168,12 @@ class TradeTycoon:
                                 time.sleep(1)
 
                         else:
+                            # Not an artifact, verify standard sell actions
+                            if self.sells_remaining <= 0:
+                                print("You have exhausted your Sell actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
+                                time.sleep(2)
+                                continue
+
                             if item not in self.market_prices:
                                 print(f"ERROR: No merchants are buying {item} this week!")
                                 time.sleep(1)
@@ -1174,7 +1183,7 @@ class TradeTycoon:
 
                                 if max_qty > 0:
                                     item_color = self.get_price_color(price)
-                                    input_qty = self.interactive_input(f"How many {item_color}{item}{Colors.RESET} would you like to sell? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ", instant_keys=['a', 'h', 'q'])
+                                    input_qty = self.interactive_input(f"How many {item_color}{item}{Colors.RESET} would you like to sell? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
                                     qty = self.parse_qty(input_qty, max_qty)
 
                                     if 0 < qty <= max_qty:
@@ -1200,6 +1209,11 @@ class TradeTycoon:
 
                 elif len(indices) > 1:
                     # --- MULTI SELL LOGIC ---
+                    if self.sells_remaining <= 0:
+                        print("You have exhausted your Sell actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
+                        time.sleep(2)
+                        continue
+
                     valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
                     
                     if not valid_items:
@@ -1266,23 +1280,28 @@ class TradeTycoon:
 
             elif action == 'u':
                 if self.locked_items:
+                    
+                    # Determine payment method for this batch to prevent accidental score usage
+                    if self.money >= self.unlock_cost:
+                        payment_mode = "Money"
+                    elif self.total_score >= self.unlock_cost:
+                        payment_mode = "Score"
+                    else:
+                        print(f"You need ${self.unlock_cost:,} or Score to unlock a new item!")
+                        time.sleep(2)
+                        continue
+
                     unlocked_any = False
 
                     while self.locked_items:
-                        can_unlock = False
-                        paid_with = ""
-
-                        if self.money >= self.unlock_cost:
+                        if payment_mode == "Money" and self.money >= self.unlock_cost:
                             self.money -= self.unlock_cost
-                            can_unlock = True
                             paid_with = "Money"
-                        elif self.total_score >= self.unlock_cost:
+                        elif payment_mode == "Score" and self.total_score >= self.unlock_cost:
                             self.total_score -= self.unlock_cost
-                            can_unlock = True
                             paid_with = "Score"
-
-                        if not can_unlock:
-                            break
+                        else:
+                            break # Stop the loop if we run out of our selected currency!
 
                         unlocked_any = True
 
@@ -1325,11 +1344,8 @@ class TradeTycoon:
                         
                         self.current_events.append(f"GUILD PERMIT SECURED: {new_item} (Paid with {paid_with}).")
 
-                    if not unlocked_any:
-                        print(f"You need ${self.unlock_cost:,} or Score to unlock a new item!")
-                        time.sleep(2)
-                    else:
-                        self.current_events.append("ACTIONS RESTORED: Mass unlock complete! Buy/Sell actions reset to 1.")
+                    if unlocked_any:
+                        self.current_events.append(f"ACTIONS RESTORED: Mass unlock ({paid_with}) complete! Buy/Sell actions reset to 1.")
 
                 else:
                     print("You have already unlocked all the realm's items!")
@@ -1361,12 +1377,11 @@ class TradeTycoon:
 
                     print(f" You have cornered the market and unlocked every good in the realm!")
                     print(f" If you Prestige, your empire will reset, but you will retain the following perks:")
-                    print(f"   - {Colors.YELLOW}Extra Starting Wealth:{Colors.RESET} +${bonus_gp:,} (Quintic root of your high score of {self.total_score:,})")
-                    print(f"   - {Colors.MAGENTA}Legendary Heirloom:{Colors.RESET} Keep your one entire stack of legendary Artifacts (minimum 1)")
+                    print(f"   - {Colors.YELLOW}Extra Starting Wealth:{Colors.RESET} +${bonus_gp:,} (Bonus from getting a high score of {self.total_score:,})")
+                    print(f"   - {Colors.MAGENTA}Legendary Heirloom:{Colors.RESET} Keep your entire collected stack of 1 Artifact type (minimum 1)")
                     print("\n Are you ready to pass the torch to the next generation?")
 
-                    # Uses standard input to prevent redrawing the screen!
-                    confirm = input("\n (Y/N): ").strip().lower()
+                    confirm = self.interactive_input("\n (Y/N): ", instant_keys=['y', 'n']).strip().lower()
                     if confirm == 'y':
                         print("\n Which artifact would you like to keep?")
                         for idx, art in enumerate(self.artifacts):
@@ -1399,6 +1414,7 @@ class TradeTycoon:
                 else:
                     print(" ERROR: You must unlock every item in the realm before you can Prestige!")
                     time.sleep(2)
+
 
             elif action == 'q':
                 print(f"\nSafe travels, Tycoon! Your score for this game was {self.total_score:,}\n")
