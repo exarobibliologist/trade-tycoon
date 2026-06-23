@@ -877,7 +877,7 @@ class TradeTycoon:
                                 
                                 total_trades += 1
                                 total_value += cost
-                                trade_details.append(f"{qty:,}x {item}")
+                                trade_details.append(f"{qty:,} {item} for ${cost:,}")
 
                         if total_trades > 0:
                             self.buys_remaining -= 1
@@ -1260,7 +1260,7 @@ class TradeTycoon:
                                 
                                 total_trades += 1
                                 total_value += revenue
-                                trade_details.append(f"{qty:,}x {item}")
+                                trade_details.append(f"{qty:,} {item} for ${revenue:,}")
                                 
                     if total_trades > 0:
                         self.sells_remaining -= 1
@@ -1373,7 +1373,7 @@ class TradeTycoon:
                     print(f"   {Colors.MAGENTA}*** PRESTIGE ***{Colors.RESET}")
                     print("=" * 200)
 
-                    bonus_gp = int(self.total_score ** (1/5))
+                    bonus_gp = int(self.total_score ** (1/4.0))
 
                     print(f" You have cornered the market and unlocked every good in the realm!")
                     print(f" If you Prestige, your empire will reset, but you will retain the following perks:")
@@ -1381,7 +1381,8 @@ class TradeTycoon:
                     print(f"   - {Colors.MAGENTA}Legendary Heirloom:{Colors.RESET} Keep your entire collected stack of 1 Artifact type (minimum 1)")
                     print("\n Are you ready to pass the torch to the next generation?")
 
-                    confirm = self.interactive_input("\n (Y/N): ", instant_keys=['y', 'n']).strip().lower()
+                    # Uses standard input to prevent redrawing the screen!
+                    confirm = input("\n (Y/N): ").strip().lower()
                     if confirm == 'y':
                         print("\n Which artifact would you like to keep?")
                         for idx, art in enumerate(self.artifacts):
@@ -1414,7 +1415,6 @@ class TradeTycoon:
                 else:
                     print(" ERROR: You must unlock every item in the realm before you can Prestige!")
                     time.sleep(2)
-
 
             elif action == 'q':
                 print(f"\nSafe travels, Tycoon! Your score for this game was {self.total_score:,}\n")
