@@ -759,7 +759,7 @@ class TradeTycoon:
                         continue
                     
                     suggested_list = ",".join(valid_indices)
-                    item_input = self.interactive_input(f"Review/Edit Easy Mode selection: ", initial_buffer=suggested_list).strip().lower()
+                    item_input = self.interactive_input(f"Review/Edit Buy selection list: ", initial_buffer=suggested_list).strip().lower()
                     if not item_input: continue
 
                 try:
@@ -907,7 +907,7 @@ class TradeTycoon:
                         continue
                     
                     suggested_list = ",".join(valid_indices)
-                    item_input = self.interactive_input(f"Review/Edit Easy Mode selection: ", initial_buffer=suggested_list).strip().lower()
+                    item_input = self.interactive_input(f"Review/Edit Sell selection list: ", initial_buffer=suggested_list).strip().lower()
                     if not item_input: continue
 
                 try:
