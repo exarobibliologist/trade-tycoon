@@ -50,6 +50,20 @@ Let's you temporarily unlock a particular item for one week only and trade on it
 
 Useful at basically any point in the game. Crashes half the market to $1, the other half goes into to suborbital inflation. Using this artifact smartly, you create a massive tidal wave of inflation/delation and ride it for weeks.
 
+### Fairy Bug Net
+![Black Swan Catalyst](https://github.com/exarobibliologist/trade-tycoon/blob/main/Fairy%20Bug%20Net.png?raw=true "Fairy Bug Net")
+
+Useful at any point in the game, but probably more useful late-game. The Fairy Bug Net brings a massive element of chaos and high-reward RNG that balances out the extreme control of the other artifacts with pure, unadulterated luck. It will randomly choose one of the following bonuses to give you:
+1. A random item that the player owns (including other artifacts) will have its quantity doubled.
+
+2. A random number (between 1-15) levels will be unlocked, and 10000 of those newly unlocked items will be given to the player.
+
+3. A Grand Market will be forced (with all costs recalculated), but every item the player owns including the locked ones can be traded on the Market.
+
+4. The four other artifacts (Black Swan Catalyst, Political Favors, Smuggler's Writ, and Owl-Chemist) will be available for purchase (standard quantity limits apply) on the weekly market. 
+
+
+
 ## Prestige
 
 After you have unlocked every item in the market, you can prestige. This:
