@@ -1184,30 +1184,39 @@ class TradeTycoon:
                                                     self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - You own nothing to double! The fairy laughs and escapes.")
 
                                             elif effect == 2:
-                                                # 2. Unlock 1-15 items and grant 10,000 of each
-                                                unlock_amount = random.randint(1, 15)
-                                                actual_unlocks = min(unlock_amount, len(self.locked_items))
-                                                
-                                                if actual_unlocks > 0:
-                                                    unlocked_names = []
-                                                    for _ in range(actual_unlocks):
-                                                        idx = random.randint(0, len(self.locked_items) - 1)
-                                                        new_item = self.locked_items.pop(idx)
-                                                        self.active_items.append(new_item)
-                                                        
-                                                        self.inventory[new_item] = 10000
-                                                        self.average_cost[new_item] = 0 
-                                                        
-                                                        self.unlocked_count += 1
-                                                        self.unlock_cost = int(self.unlock_cost * 1.75)
-                                                        self.current_market.append(new_item)
-                                                        unlocked_names.append(new_item)
-                                                        
-                                                    self.current_market.sort()
-                                                    self.sync_artifact_prices()
-                                                    self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy unlocked {actual_unlocks} items and gave you 10,000 of each! ({', '.join(unlocked_names)})")
-                                                else:
-                                                    self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
+                                            # 2. Unlock 5-15 items and grant 10,000 of each
+                                            unlock_amount = random.randint(5, 15)
+                                            actual_unlocks = min(unlock_amount, len(self.locked_items))
+                                            
+                                            if actual_unlocks > 0:
+                                                unlocked_names = []
+                                                for _ in range(actual_unlocks):
+                                                    idx = random.randint(0, len(self.locked_items) - 1)
+                                                    new_item = self.locked_items.pop(idx)
+                                                    self.active_items.append(new_item)
+                                                    
+                                                    self.inventory[new_item] = 10000
+                                                    self.average_cost[new_item] = 0 
+                                                    
+                                                    self.unlocked_count += 1
+                                                    self.unlock_cost = int(self.unlock_cost * 1.75)
+                                                    self.current_market.append(new_item)
+                                                    
+                                                    # --- NEW: Generate a market price so it is tradable immediately ---
+                                                    hex_index = len(self.market_prices) * 2
+                                                    hex_pair = self.current_hash[hex_index : hex_index+2]
+                                                    raw_hash_price = int(hex_pair, 16) if hex_pair else random.randint(10, 250)
+                                                    scaling_bonus = self.unlocked_count * 5
+                                                    self.market_prices[new_item] = max(1, raw_hash_price + scaling_bonus)
+                                                    # -----------------------------------------------------------------
+
+                                                    unlocked_names.append(new_item)
+                                                    
+                                                self.current_market.sort()
+                                                self.sync_artifact_prices()
+                                                self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy unlocked {actual_unlocks} items and gave you 10,000 of each! ({', '.join(unlocked_names)})")
+                                            else:
+                                                self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
 
                                             elif effect == 3:
                                                 # 3. Force a Grand Market including all owned locked items
