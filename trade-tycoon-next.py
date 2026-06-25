@@ -199,7 +199,7 @@ class TradeTycoon:
 
     def trigger_event(self):
         # --- NEW EVENT POOL LOGIC ---
-        event_pool = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        event_pool = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
         for _ in range(5): # Maximum of 5 events per week
             # 50% chance to stop drawing events immediately
@@ -283,41 +283,66 @@ class TradeTycoon:
 
             elif chosen_event == 5:
                 # 5. FORTUNE (UNLOCKED ITEMS)
-                f_item = random.choice(self.active_items)
-                f_qty = (random.randint(50, 100) * self.week) + (self.unlocked_count * 5)
-                current_qty = self.inventory[f_item]
-                current_avg = self.average_cost[f_item]
-                current_total_value = current_qty * current_avg
-                new_qty = current_qty + f_qty
-                self.average_cost[f_item] = current_total_value // new_qty if new_qty > 0 else 0
-                self.inventory[f_item] = new_qty
+                # Pick 2 to 5 different items to find
+                num_types = random.randint(2, 5)
+                num_types = min(num_types, len(self.active_items)) # Safety clamp
+                
+                chosen_items = random.sample(self.active_items, num_types)
+                gifted_tally = {}
+                
+                for f_item in chosen_items:
+                    # Smaller quantity per item, scaled by week and unlocks
+                    f_qty = (random.randint(15, 35) * self.week) + (self.unlocked_count * 2)
+                    
+                    current_qty = self.inventory[f_item]
+                    current_avg = self.average_cost[f_item]
+                    current_total_value = current_qty * current_avg
+                    new_qty = current_qty + f_qty
+                    self.average_cost[f_item] = current_total_value // new_qty if new_qty > 0 else 0
+                    self.inventory[f_item] = new_qty
+                    
+                    gifted_tally[f_item] = f_qty
+                    
+                tally_str = ", ".join([f"{q:,}x {i}" for i, q in gifted_tally.items()])
+                
                 item_msgs = [
-                    f"FORTUNE! You discovered an overturned wagon and salvaged {f_qty:,} {f_item}!",
-                    f"FORTUNE! You found a hidden smuggler's cache containing {f_qty:,} {f_item}!"
+                    f"FORTUNE! You discovered an overturned wagon and salvaged: {tally_str}!",
+                    f"FORTUNE! You found a hidden smuggler's cache containing: {tally_str}!"
                 ]
                 self.current_events.append(random.choice(item_msgs))
 
             elif chosen_event == 6:
                 # 6. BONUS (LOCKED ITEMS)
-                if self.locked_items:
-                    f_item = random.choice(self.locked_items)
-                else:
-                    f_item = random.choice(self.active_items)
+                num_types = random.randint(2, 5)
+                
+                # Favor locked items, but fall back to active items if everything is unlocked
+                available_pool = self.locked_items if self.locked_items else self.active_items
+                num_types = min(num_types, len(available_pool)) # Safety clamp
+                
+                chosen_items = random.sample(available_pool, num_types)
+                gifted_tally = {}
+                
+                for f_item in chosen_items:
+                    f_qty = (random.randint(15, 35) * self.week) + (self.unlocked_count * 2)
+                    
+                    if f_item not in self.inventory:
+                        self.inventory[f_item] = 0
+                        self.average_cost[f_item] = 0
 
-                f_qty = (random.randint(50, 100) * self.week) + (self.unlocked_count * 5)
-                if f_item not in self.inventory:
-                    self.inventory[f_item] = 0
-                    self.average_cost[f_item] = 0
-
-                current_qty = self.inventory.get(f_item, 0)
-                current_avg = self.average_cost.get(f_item, 0)
-                current_total_value = current_qty * current_avg
-                new_qty = current_qty + f_qty
-                self.average_cost[f_item] = current_total_value // new_qty if new_qty > 0 else 0
-                self.inventory[f_item] = new_qty
+                    current_qty = self.inventory.get(f_item, 0)
+                    current_avg = self.average_cost.get(f_item, 0)
+                    current_total_value = current_qty * current_avg
+                    new_qty = current_qty + f_qty
+                    self.average_cost[f_item] = current_total_value // new_qty if new_qty > 0 else 0
+                    self.inventory[f_item] = new_qty
+                    
+                    gifted_tally[f_item] = f_qty
+                    
+                tally_str = ", ".join([f"{q:,}x {i}" for i, q in gifted_tally.items()])
+                
                 magic_msgs = [
-                    f"KAZAAM! A mischievous forest fairy gifted you {f_qty:,} {f_item}!",
-                    f"KAZAAM! You rubbed a strange lamp and you got {f_qty:,} {f_item}!"
+                    f"KAZAAM! A mischievous forest fairy gifted you a variety of rare goods: {tally_str}!",
+                    f"KAZAAM! You rubbed a strange lamp and received a bounty: {tally_str}!"
                 ]
                 self.current_events.append(random.choice(magic_msgs))
 
@@ -382,6 +407,26 @@ class TradeTycoon:
                     f"AMBUSH! Pickpockets swarmed you in the crowded town square! You lost ${lost:,}."
                 ]
                 self.current_events.append(random.choice(gold_ambush_msgs))
+            
+            elif chosen_event == 11:
+                # 11. BONUS (ARTIFACTS)
+                f_qty = random.randint(5, 15)
+                
+                # Track what we got to display it cleanly in the event log
+                gifted_tally = {}
+                for _ in range(f_qty):
+                    art = random.choice(self.artifacts)
+                    self.inventory[art] += 1
+                    gifted_tally[art] = gifted_tally.get(art, 0) + 1
+                
+                # Build a readable string of the loot
+                tally_str = ", ".join([f"{q}x {a}" for a, q in gifted_tally.items()])
+                
+                magic_msgs = [
+                    f"KAZAAM! A fairy went absolutely crazy and gifted you {f_qty} artifacts! ({tally_str})",
+                    f"KAZAAM! You stumbled into a mythical fairy circle and found {f_qty} artifacts! ({tally_str})"
+                ]
+                self.current_events.append(random.choice(magic_msgs))
 
         # --- NEW MASTER RECALCULATION ---
         # After all events resolve, ensure all artifacts match the final sum of the market!
