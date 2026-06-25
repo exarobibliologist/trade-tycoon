@@ -613,11 +613,12 @@ class TradeTycoon:
 
         # --- ARTIFACT PINNED DISPLAY ---
         if artifact_display:
-            print(f" {Colors.MAGENTA}*** LEGENDARY ARTIFACTS ***{Colors.RESET}")
+            print(f" {Colors.MAGENTA}*** LEGENDARY ARTIFACTS *** ARTIFACTS CAN BE USED EVEN WHEN BUY/SELL NOT AVAILABLE *** ARTIFACTS RESET BUY/SELL ACTIONS WHEN USED *** {Colors.RESET}\n")
             self.print_2_columns(artifact_display, format_combined, start_idx=0)
-            print("-" * 200)
+            print("=" * 200)
 
         # --- PAGINATION MATH ---
+        print(f" {Colors.GREEN}*** NORMAL INVENTORY ***{Colors.RESET}\n")
         total_items = len(normal_display)
         items_per_page = 40
         self.total_pages = max(1, (total_items + items_per_page - 1) // items_per_page)
@@ -737,16 +738,16 @@ class TradeTycoon:
             self.event_scroll = 0 # Auto-snap to bottom on new action
 
             if action == 'b':
-                if self.buys_remaining <= 0:
-                    print("You have exhausted your Buy actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
-                    time.sleep(2)
-                    continue
-
                 item_input = self.interactive_input(f"Enter item number(s) to buy, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
                 if not item_input: continue
 
                 if item_input == 'e':
                     # EASY MODE: Select items not owned OR where market price <= average cost
+                    if self.buys_remaining <= 0:
+                        print("You have exhausted your Buy actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
+                        time.sleep(2)
+                        continue
+
                     valid_indices = [
                         str(i + 1) for i, item in enumerate(self.display_items) 
                         if item not in self.artifacts 
@@ -782,6 +783,12 @@ class TradeTycoon:
                             print(f"ERROR: {item} is not being traded in the market this week!")
                             time.sleep(1)
                         else:
+                            # --- NEW: Block regular items if out of actions, but let artifacts pass! ---
+                            if item not in self.artifacts and self.buys_remaining <= 0:
+                                print("You have exhausted your Buy actions for regular items this week! (Artifacts can still be purchased).")
+                                time.sleep(2)
+                                continue
+                            
                             price = self.market_prices[item]
                             max_qty = self.money // price
 
@@ -806,7 +813,11 @@ class TradeTycoon:
 
                                     self.money -= cost
                                     self.inventory[item] = new_qty
-                                    self.buys_remaining -= 1
+                                    
+                                    # --- NEW: Only consume a buy action if it's a regular item ---
+                                    if item not in self.artifacts:
+                                        self.buys_remaining -= 1
+                                    
                                     self.current_events.append(f"BOUGHT: {qty:,} {item} for ${cost:,}")
 
                                     if item in self.artifacts:
@@ -830,6 +841,11 @@ class TradeTycoon:
 
                 elif len(indices) > 1:
                     # --- MULTI BUY LOGIC ---
+                    if self.buys_remaining <= 0:
+                        print("You have exhausted your Buy actions for regular items this week!")
+                        time.sleep(2)
+                        continue
+                        
                     valid_items = [self.display_items[i] for i in indices if 0 <= i < len(self.display_items) and self.display_items[i] not in self.artifacts]
                     
                     if not valid_items:
@@ -1199,7 +1215,6 @@ class TradeTycoon:
                                                         self.average_cost[new_item] = 0 
                                                         
                                                         self.unlocked_count += 1
-                                                        self.unlock_cost = int(self.unlock_cost * 1.75)
                                                         self.current_market.append(new_item)
                                                         
                                                         # --- NEW: Generate a market price so it is tradable immediately ---
