@@ -202,8 +202,8 @@ class TradeTycoon:
         event_pool = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
         for _ in range(5): # Maximum of 5 events per week
-            # 50% chance to stop drawing events immediately
-            if random.randint(0, 1) == 0:
+            # 30% chance to stop drawing events immediately
+            if random.randint(1, 100) <= 30:
                 break
 
             if not event_pool:
@@ -410,7 +410,7 @@ class TradeTycoon:
             
             elif chosen_event == 11:
                 # 11. BONUS (ARTIFACTS)
-                f_qty = random.randint(5, 15)
+                f_qty = random.randint(10, 20)
                 
                 # Track what we got to display it cleanly in the event log
                 gifted_tally = {}
@@ -603,11 +603,21 @@ class TradeTycoon:
         print("=" * 200)
 
         # --- DISPLAY LIST SEPARATION ---
-        all_visible = list(set(self.active_items + [item for item, qty in self.inventory.items() if qty > 0] + self.current_market))
+        # 1. Artifacts always lock in slots 1-5
+        artifact_display = sorted(self.artifacts)
 
-        # Sort artifacts and normal items into separate lists
-        artifact_display = sorted([item for item in all_visible if item in self.artifacts])
-        normal_display = sorted([item for item in all_visible if item not in self.artifacts])
+        # 2. Gather all visible normal items
+        normal_visible = list(set(
+            [item for item in self.active_items if item not in self.artifacts] + 
+            [item for item, qty in self.inventory.items() if qty > 0 and item not in self.artifacts] + 
+            [item for item in self.current_market if item not in self.artifacts]
+        ))
+
+        # 3. Sort normal items: Available first (alphabetical), then Unavailable (alphabetical)
+        available_normal = sorted([item for item in normal_visible if item in self.market_prices])
+        unavailable_normal = sorted([item for item in normal_visible if item not in self.market_prices])
+        
+        normal_display = available_normal + unavailable_normal
 
         # Master list that numerical input will reference exactly in order
         self.display_items = artifact_display + normal_display
@@ -626,8 +636,9 @@ class TradeTycoon:
                         inv_color = Colors.MAGENTA
                         idx_color = Colors.MAGENTA
                     else:
+                        # Gray out unowned artifacts in the market
                         inv_color = Colors.GRAY
-                        idx_color = Colors.RESET
+                        idx_color = Colors.GRAY 
                 else:
                     mkt_color = self.get_price_color(m_price)
                     if qty > 0:
@@ -641,8 +652,13 @@ class TradeTycoon:
                 mkt_str = "[Market: N/A]"
 
                 if item in self.artifacts:
-                    inv_color = Colors.MAGENTA
-                    idx_color = Colors.MAGENTA
+                    if qty > 0:
+                        inv_color = Colors.MAGENTA
+                        idx_color = Colors.MAGENTA
+                    else:
+                        # Gray out unowned artifacts completely
+                        inv_color = Colors.GRAY
+                        idx_color = Colors.GRAY 
                 else:
                     inv_color = Colors.GRAY
                     idx_color = Colors.GRAY
@@ -657,10 +673,9 @@ class TradeTycoon:
             return f"{colored_inv_str} {Colors.GRAY}---{Colors.RESET} {mkt_color}{mkt_str}{Colors.RESET}{padding}"
 
         # --- ARTIFACT PINNED DISPLAY ---
-        if artifact_display:
-            print(f" {Colors.MAGENTA}*** LEGENDARY ARTIFACTS *** ARTIFACTS CAN BE USED EVEN WHEN BUY/SELL NOT AVAILABLE *** ARTIFACTS RESET BUY/SELL ACTIONS WHEN USED *** {Colors.RESET}\n")
-            self.print_2_columns(artifact_display, format_combined, start_idx=0)
-            print("=" * 200)
+        print(f" {Colors.MAGENTA}*** LEGENDARY ARTIFACTS *** ARTIFACTS CAN BE USED EVEN WHEN BUY/SELL NOT AVAILABLE *** ARTIFACTS RESET BUY/SELL ACTIONS WHEN USED *** {Colors.RESET}\n")
+        self.print_2_columns(artifact_display, format_combined, start_idx=0)
+        print("=" * 200)
 
         # --- PAGINATION MATH ---
         print(f" {Colors.GREEN}*** NORMAL INVENTORY ***{Colors.RESET}\n")
@@ -698,7 +713,8 @@ class TradeTycoon:
         buy_color = Colors.YELLOW if self.buys_remaining > 0 else Colors.GRAY
         sell_color = Colors.YELLOW if self.sells_remaining > 0 else Colors.GRAY
         
-        print(f"Actions: [{buy_color}B{Colors.RESET}]uy ({self.buys_remaining}) | [{sell_color}S{Colors.RESET}]ell/Use ({self.sells_remaining}) | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
+        # CHANGED: Split Sell/Use into separate keys, adding [A]rtifact
+        print(f"Actions: [{buy_color}B{Colors.RESET}]uy ({self.buys_remaining}) | [{sell_color}S{Colors.RESET}]ell ({self.sells_remaining}) | Use [{Colors.YELLOW}A{Colors.RESET}]rtifact | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt} | [{Colors.YELLOW}F{Colors.RESET}]ile Save | File [{Colors.YELLOW}L{Colors.RESET}]oad | [{Colors.YELLOW}Q{Colors.RESET}]uit")
 
     def interactive_input(self, prompt_text, custom_renderer=None, initial_buffer="", instant_keys=None):
         """ A completely custom input engine that allows screen redrawing during typing! """
@@ -952,8 +968,369 @@ class TradeTycoon:
                         print("None of those selected items are currently available in the market.")
                         time.sleep(2)
 
+            elif action == 'a':
+                item_input = self.interactive_input(f"Enter the number of the Artifact you wish to use: ").strip().lower()
+                if not item_input: continue
+
+                try:
+                    item_idx = int(item_input) - 1
+                except ValueError:
+                    print("Invalid input format.")
+                    time.sleep(1)
+                    continue
+
+                if 0 <= item_idx < len(self.display_items):
+                    item = self.display_items[item_idx]
+
+                    if item in self.artifacts:
+                        if self.inventory.get(item, 0) > 0:
+                            
+                            # Build the multiline prompt string
+                            power_desc = ""
+                            if item == "Smuggler's Writ":
+                                power_desc = "POWER: Bypass local tariffs and force the market to accept ANY item from your inventory!"
+                            elif item == "Black Swan Catalyst":
+                                power_desc = "POWER: Triggers a geopolitical crisis! (Crashes 1/2 of the market, inflates another 1/2)"
+                            elif item == "Political Favors":
+                                power_desc = "POWER: Call in a massive favor from the Crown! Instantly receive 10,000 of ANY item (even locked ones) for free!"
+                            elif item == "Owl-Chemist":
+                                power_desc = "POWER: Convert any existing item into any other known item at a 1:1 ratio!"
+                            elif item == "Fairy Bug Net":
+                                power_desc = "POWER: Use it to capture a fairy and get a random bonus from them. The fairy will escape after the bonus has been given."
+
+                            artifact_prompt = f"\n{Colors.MAGENTA}*** ARTIFACT SELECTED: {item} ***{Colors.RESET}\n{power_desc}\nDo you want to invoke this artifact? (Y/N): "
+                            
+                            # Use interactive input so arrow keys still work!
+                            confirm = self.interactive_input(artifact_prompt, instant_keys=['y', 'n']).strip().lower()
+                            
+                            if confirm == 'y':
+                                if item == "Smuggler's Writ":
+                                    try:
+                                        smuggle_idx_str = self.interactive_input(f"Enter the dashboard number of the item you want to smuggle: ")
+                                        smuggle_idx = int(smuggle_idx_str) - 1
+                                        if 0 <= smuggle_idx < len(self.display_items):
+                                            smuggle_item = self.display_items[smuggle_idx]
+                                            max_qty = self.inventory.get(smuggle_item, 0)
+
+                                            if max_qty > 0 and smuggle_item not in self.artifacts:
+                                                sell_price = self.average_cost.get(smuggle_item, 1)
+                                                if sell_price <= 0:
+                                                    sell_price = 1
+
+                                                smuggle_color = Colors.MAGENTA if smuggle_item in self.artifacts else self.get_price_color(sell_price)
+                                                input_qty = self.interactive_input(f"How many {smuggle_color}{smuggle_item}{Colors.RESET} would you like to smuggle? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
+                                                qty = self.parse_qty(input_qty, max_qty)
+
+                                                if 0 < qty <= max_qty:
+                                                    self.inventory[item] -= 1
+                                                    if self.inventory[item] == 0:
+                                                        self.average_cost[item] = 0
+
+                                                    revenue = sell_price * qty
+                                                    self.money += revenue
+                                                    self.total_score += revenue
+                                                    self.inventory[smuggle_item] -= qty
+
+                                                    if self.inventory[smuggle_item] == 0:
+                                                        self.average_cost[smuggle_item] = 0
+
+                                                    self.buys_remaining = 1
+                                                    self.sells_remaining = 1
+
+                                                    if smuggle_item not in self.market_prices:
+                                                        self.current_market.append(smuggle_item)
+                                                        self.market_prices[smuggle_item] = sell_price
+                                                        self.current_market.sort()
+                                                        self.sync_artifact_prices()
+                                                        self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. The market now accepts {smuggle_item}! (+1 Buy/Sell Action Granted!)")
+                                                    else:
+                                                        self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. (+1 Buy/Sell Action Granted!)")
+                                                else:
+                                                    print("Invalid quantity. Invocation cancelled.")
+                                                    time.sleep(1)
+                                            else:
+                                                print("You cannot smuggle that item. Invocation cancelled.")
+                                                time.sleep(1)
+                                        else:
+                                            print("Invalid item number. Invocation cancelled.")
+                                            time.sleep(1)
+                                    except ValueError:
+                                        print("Invalid input. Invocation cancelled.")
+                                        time.sleep(1)
+
+                                elif item == "Black Swan Catalyst":
+                                    self.inventory[item] -= 1
+                                    if self.inventory[item] == 0:
+                                        self.average_cost[item] = 0
+
+                                    targets = [m for m in self.current_market if m not in self.artifacts]
+                                    impact_qty = len(targets) // 2
+
+                                    if impact_qty < 1 and len(targets) >= 2:
+                                        impact_qty = 1
+
+                                    if impact_qty >= 1 and len(targets) >= (impact_qty * 2):
+                                        affected = random.sample(targets, impact_qty * 2)
+                                        moons = affected[:impact_qty]
+                                        crashes = affected[impact_qty:]
+
+                                        for moon in moons:
+                                            multiplier = random.randint(25, 50)
+                                            baseline = 100 + (self.unlocked_count * 10)
+                                            self.market_prices[moon] = (self.market_prices[moon] * multiplier) + baseline
+
+                                        for crash in crashes:
+                                            self.market_prices[crash] = 1
+
+                                        self.sync_artifact_prices()
+
+                                        self.buys_remaining = 1
+                                        self.sells_remaining = 1
+
+                                        moon_str = ", ".join(moons)
+                                        crash_str = ", ".join(crashes)
+
+                                        self.current_events.append(f"ARTIFACT INVOKED: {item} (Actions Reset to 1!)")
+                                    else:
+                                        self.current_events.append(f"ARTIFACT INVOKED: {item} - The market was too small for a crisis.")
+
+                                elif item == "Political Favors":
+                                    all_possible = sorted(self.active_items + self.locked_items)
+                                    
+                                    def render_armory():
+                                        self.clear_screen()
+                                        print("=" * 200)
+                                        print(f"   {Colors.MAGENTA}*** ROYAL ARMORY (Political Favors) ***{Colors.RESET}")
+                                        print("=" * 200)
+
+                                        def format_armory(idx, it):
+                                            return f"[{idx + 1:<2}] {it:<45}"
+
+                                        self.print_3_columns(all_possible, format_armory)
+                                        print("=" * 200)
+
+                                    try:
+                                        # Using the custom_renderer prevents the main dashboard from wiping our cool menu!
+                                        fav_idx = int(self.interactive_input(f"Enter the number of the item you want 10,000 of (1-{len(all_possible)}): ", custom_renderer=render_armory)) - 1
+                                        if 0 <= fav_idx < len(all_possible):
+                                            target_item = all_possible[fav_idx]
+
+                                            self.inventory[item] -= 1
+                                            if self.inventory[item] == 0:
+                                                self.average_cost[item] = 0
+
+                                            if target_item not in self.inventory:
+                                                self.inventory[target_item] = 0
+                                                self.average_cost[target_item] = 0
+
+                                            current_qty = self.inventory.get(target_item, 0)
+                                            new_qty = current_qty + 10000
+                                            self.inventory[target_item] = new_qty
+                                            
+                                            self.buys_remaining = 1
+                                            self.sells_remaining = 1
+
+                                            self.current_events.append(f"ARTIFACT INVOKED: Political Favors - The Crown granted you 10,000 {target_item}! (Actions Reset to 1!)")
+                                        else:
+                                            print("Invalid selection. Invocation cancelled.")
+                                            time.sleep(1)
+                                    except ValueError:
+                                        print("Invalid input. Invocation cancelled.")
+                                        time.sleep(1)
+
+                                elif item == "Owl-Chemist":
+                                    try:
+                                        source_idx_str = self.interactive_input(f"Enter the dashboard number of the item you want to convert FROM: ")
+                                        source_idx = int(source_idx_str) - 1
+                                        if 0 <= source_idx < len(self.display_items):
+                                            source_item = self.display_items[source_idx]
+                                            max_qty = self.inventory.get(source_item, 0)
+
+                                            if max_qty > 0 and source_item not in self.artifacts:
+                                                source_price = self.market_prices.get(source_item, 1)
+                                                source_color = self.get_price_color(source_price)
+
+                                                input_qty = self.interactive_input(f"How many {source_color}{source_item}{Colors.RESET} would you like to convert? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
+                                                qty = self.parse_qty(input_qty, max_qty)
+
+                                                if 0 < qty <= max_qty:
+                                                    all_possible = sorted(self.active_items + self.locked_items)
+                                                    
+                                                    def render_alchemy():
+                                                        self.clear_screen()
+                                                        print("=" * 200)
+                                                        print(f"   {Colors.MAGENTA}*** ALCHEMY LAB (Owl-Chemist) ***{Colors.RESET}")
+                                                        print("=" * 200)
+
+                                                        def format_alchemy(idx, it):
+                                                            return f"[{idx + 1:<2}] {it:<45}"
+
+                                                        self.print_3_columns(all_possible, format_alchemy)
+                                                        print("=" * 200)
+
+                                                    try:
+                                                        target_idx = int(self.interactive_input(f"Enter the number of the item you want to convert INTO (1-{len(all_possible)}): ", custom_renderer=render_alchemy)) - 1
+                                                        if 0 <= target_idx < len(all_possible):
+                                                            target_item = all_possible[target_idx]
+
+                                                            if source_item == target_item:
+                                                                print("You cannot convert an item into itself!")
+                                                                time.sleep(1)
+                                                            else:
+                                                                self.inventory[item] -= 1
+                                                                if self.inventory[item] == 0:
+                                                                    self.average_cost[item] = 0
+
+                                                                self.inventory[source_item] -= qty
+                                                                if self.inventory[source_item] == 0:
+                                                                    self.average_cost[source_item] = 0
+
+                                                                if target_item not in self.inventory:
+                                                                    self.inventory[target_item] = 0
+                                                                    self.average_cost[target_item] = 0
+
+                                                                current_target_qty = self.inventory.get(target_item, 0)
+                                                                new_target_qty = current_target_qty + qty
+                                                                self.inventory[target_item] = new_target_qty
+                                                                
+                                                                self.buys_remaining = 1
+                                                                self.sells_remaining = 1
+
+                                                                self.current_events.append(f"ARTIFACT INVOKED: Owl-Chemist - Converted {qty:,} {source_item} into {target_item}! (Actions Reset to 1!)")
+                                                        else:
+                                                            print("Invalid selection. Invocation cancelled.")
+                                                            time.sleep(1)
+                                                    except ValueError:
+                                                        print("Invalid input. Invocation cancelled.")
+                                                        time.sleep(1)
+                                                else:
+                                                    print("Invalid quantity. Invocation cancelled.")
+                                                    time.sleep(1)
+                                            else:
+                                                print("You cannot convert that item. Invocation cancelled.")
+                                                time.sleep(1)
+                                        else:
+                                            print("Invalid item number. Invocation cancelled.")
+                                            time.sleep(1)
+                                    except ValueError:
+                                        print("Invalid input. Invocation cancelled.")
+                                        time.sleep(1)
+
+                                elif item == "Fairy Bug Net":
+                                        self.inventory[item] -= 1
+                                        if self.inventory[item] == 0:
+                                            self.average_cost[item] = 0
+
+                                        effect = random.randint(1, 4)
+
+                                        if effect == 1:
+                                            # 1. Double a random owned item
+                                            owned_items = [i for i, q in self.inventory.items() if q > 0]
+                                            if owned_items:
+                                                target = random.choice(owned_items)
+                                                qty = self.inventory[target]
+                                                
+                                                # Halve average cost since the new items are free
+                                                self.average_cost[target] = self.average_cost[target] // 2 
+                                                self.inventory[target] += qty
+                                                self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy doubled your {target} ({qty:,} -> {self.inventory[target]:,})!")
+                                            else:
+                                                self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - You own nothing to double! The fairy laughs and escapes.")
+
+                                        elif effect == 2:
+                                            # 2. Unlock 5-15 items and grant 10,000 of each
+                                            unlock_amount = random.randint(5, 15)
+                                            actual_unlocks = min(unlock_amount, len(self.locked_items))
+                                            
+                                            if actual_unlocks > 0:
+                                                unlocked_names = []
+                                                for _ in range(actual_unlocks):
+                                                    idx = random.randint(0, len(self.locked_items) - 1)
+                                                    new_item = self.locked_items.pop(idx)
+                                                    self.active_items.append(new_item)
+                                                    
+                                                    self.inventory[new_item] = 10000
+                                                    self.average_cost[new_item] = 0 
+                                                    
+                                                    self.unlocked_count += 1
+                                                    self.current_market.append(new_item)
+                                                    
+                                                    # --- NEW: Generate a market price so it is tradable immediately ---
+                                                    hex_index = len(self.market_prices) * 2
+                                                    hex_pair = self.current_hash[hex_index : hex_index+2]
+                                                    raw_hash_price = int(hex_pair, 16) if hex_pair else random.randint(10, 250)
+                                                    scaling_bonus = self.unlocked_count * 5
+                                                    self.market_prices[new_item] = max(1, raw_hash_price + scaling_bonus)
+                                                    # -----------------------------------------------------------------
+
+                                                    unlocked_names.append(new_item)
+                                                    
+                                                self.current_market.sort()
+                                                self.sync_artifact_prices()
+                                                self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy unlocked {actual_unlocks} items and gave you 10,000 of each! ({', '.join(unlocked_names)})")
+                                            else:
+                                                self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
+
+                                        elif effect == 3:
+                                            # 3. Force a Grand Market including all owned locked items
+                                            all_to_market = set(self.active_items)
+                                            for inv_item, q in self.inventory.items():
+                                                if q > 0 and inv_item not in self.artifacts:
+                                                    all_to_market.add(inv_item)
+                                            
+                                            self.current_market = []
+                                            
+                                            # Generate new hashes to calculate prices
+                                            total_artifacts = sum(self.inventory.get(art, 0) for art in self.artifacts)
+                                            seed_string = f"run_{self.run_id}_money_{self.money}_score_{self.total_score}_unlocked_{self.unlocked_count}_arts_{total_artifacts}_week_{self.week}_fairy"
+                                            seed_string_two = f"run_{self.run_id}_week_{self.week}_score_{self.total_score}_unlocked_{self.unlocked_count}_money_{self.money}_fairy"
+                                            market_hash = self.get_market_hash(seed_string, seed_string_two)
+                                            self.current_hash = market_hash
+                                            
+                                            normal_item_count = 0
+                                            for m_item in sorted(list(all_to_market)):
+                                                self.current_market.append(m_item)
+                                                hex_pair = self.current_hash[normal_item_count*2 : (normal_item_count*2)+2]
+                                                raw_hash_price = int(hex_pair, 16) if hex_pair else 10 
+                                                scaling_bonus = self.unlocked_count * 5
+                                                self.market_prices[m_item] = max(1, raw_hash_price + scaling_bonus)
+                                                normal_item_count += 1
+                                            
+                                            self.roll_for_artifact(market_hash, is_grand_market=True)
+                                            self.current_market.sort()
+                                            self.sync_artifact_prices()
+                                            self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - The fairy forced a massive Grand Market! Everything you own is now tradable!")
+
+                                        elif effect == 4:
+                                            # 4. Summon all other artifacts to the market
+                                            other_arts = ["Black Swan Catalyst", "Political Favors", "Smuggler's Writ", "Owl-Chemist"]
+                                            for art in other_arts:
+                                                if art not in self.current_market:
+                                                    self.current_market.append(art)
+                                                self.market_prices[art] = 0 
+                                                self.artifact_stock[art] = 10 
+                                            
+                                            self.sync_artifact_prices()
+                                            self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy summoned the other 4 legendary artifacts to the market!")
+
+                                        # Reset actions
+                                        self.buys_remaining = 1
+                                        self.sells_remaining = 1
+                            else:
+                                print("Artifact invocation cancelled.")
+                                time.sleep(1)
+                        else:
+                            print(f"You don't possess a {item} to use!")
+                            time.sleep(1)
+                    else:
+                        print("That is not an artifact!")
+                        time.sleep(1)
+                else:
+                    print("Invalid item number!")
+                    time.sleep(1)
+
             elif action == 's':
-                item_input = self.interactive_input(f"Enter item number(s) to sell/use, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
+                item_input = self.interactive_input(f"Enter item number(s) to sell, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
                 if not item_input: continue
 
                 if item_input == 'e':
@@ -985,387 +1362,51 @@ class TradeTycoon:
                     continue
 
                 if len(indices) == 1:
-                    # --- SINGLE SELL/USE LOGIC ---
+                    # --- SINGLE SELL LOGIC ---
                     item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
 
                         if item in self.artifacts:
-                            if self.inventory.get(item, 0) > 0:
-                                
-                                # Build the multiline prompt string
-                                power_desc = ""
-                                if item == "Smuggler's Writ":
-                                    power_desc = "POWER: Bypass local tariffs and force the market to accept ANY item from your inventory!"
-                                elif item == "Black Swan Catalyst":
-                                    power_desc = "POWER: Triggers a geopolitical crisis! (Crashes 1/2 of the market, inflates another 1/2)"
-                                elif item == "Political Favors":
-                                    power_desc = "POWER: Call in a massive favor from the Crown! Instantly receive 10,000 of ANY item (even locked ones) for free!"
-                                elif item == "Owl-Chemist":
-                                    power_desc = "POWER: Convert any existing item into any other known item at a 1:1 ratio!"
-                                elif item == "Fairy Bug Net":
-                                    power_desc = "POWER: Use it to capture a fairy and get a random bonus from them. The fairy will escape after the bonus has been given."
+                            print("Artifacts cannot be sold! Press [A] to use them.")
+                            time.sleep(1)
+                            continue
 
-                                artifact_prompt = f"\n{Colors.MAGENTA}*** ARTIFACT SELECTED: {item} ***{Colors.RESET}\n{power_desc}\nDo you want to invoke this artifact? (Y/N): "
-                                
-                                # Use interactive input so arrow keys still work!
-                                confirm = self.interactive_input(artifact_prompt, instant_keys=['y', 'n']).strip().lower()
-                                
-                                if confirm == 'y':
-                                    if item == "Smuggler's Writ":
-                                        try:
-                                            smuggle_idx_str = self.interactive_input(f"Enter the dashboard number of the item you want to smuggle: ")
-                                            smuggle_idx = int(smuggle_idx_str) - 1
-                                            if 0 <= smuggle_idx < len(self.display_items):
-                                                smuggle_item = self.display_items[smuggle_idx]
-                                                max_qty = self.inventory.get(smuggle_item, 0)
+                        # Not an artifact, verify standard sell actions
+                        if self.sells_remaining <= 0:
+                            print("You have exhausted your Sell actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
+                            time.sleep(2)
+                            continue
 
-                                                if max_qty > 0 and smuggle_item not in self.artifacts:
-                                                    sell_price = self.average_cost.get(smuggle_item, 1)
-                                                    if sell_price <= 0:
-                                                        sell_price = 1
-
-                                                    smuggle_color = Colors.MAGENTA if smuggle_item in self.artifacts else self.get_price_color(sell_price)
-                                                    input_qty = self.interactive_input(f"How many {smuggle_color}{smuggle_item}{Colors.RESET} would you like to smuggle? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
-                                                    qty = self.parse_qty(input_qty, max_qty)
-
-                                                    if 0 < qty <= max_qty:
-                                                        self.inventory[item] -= 1
-                                                        if self.inventory[item] == 0:
-                                                            self.average_cost[item] = 0
-
-                                                        revenue = sell_price * qty
-                                                        self.money += revenue
-                                                        self.total_score += revenue
-                                                        self.inventory[smuggle_item] -= qty
-
-                                                        if self.inventory[smuggle_item] == 0:
-                                                            self.average_cost[smuggle_item] = 0
-
-                                                        self.buys_remaining = 1
-                                                        self.sells_remaining = 1
-
-                                                        if smuggle_item not in self.market_prices:
-                                                            self.current_market.append(smuggle_item)
-                                                            self.market_prices[smuggle_item] = sell_price
-                                                            self.current_market.sort()
-                                                            self.sync_artifact_prices()
-                                                            self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. The market now accepts {smuggle_item}! (+1 Buy/Sell Action Granted!)")
-                                                        else:
-                                                            self.current_events.append(f"ARTIFACT INVOKED: Sold {qty:,} {smuggle_item} for ${revenue:,}. (+1 Buy/Sell Action Granted!)")
-                                                    else:
-                                                        print("Invalid quantity. Invocation cancelled.")
-                                                        time.sleep(1)
-                                                else:
-                                                    print("You cannot smuggle that item. Invocation cancelled.")
-                                                    time.sleep(1)
-                                            else:
-                                                print("Invalid item number. Invocation cancelled.")
-                                                time.sleep(1)
-                                        except ValueError:
-                                            print("Invalid input. Invocation cancelled.")
-                                            time.sleep(1)
-
-                                    elif item == "Black Swan Catalyst":
-                                        self.inventory[item] -= 1
-                                        if self.inventory[item] == 0:
-                                            self.average_cost[item] = 0
-
-                                        targets = [m for m in self.current_market if m not in self.artifacts]
-                                        impact_qty = len(targets) // 2
-
-                                        if impact_qty < 1 and len(targets) >= 2:
-                                            impact_qty = 1
-
-                                        if impact_qty >= 1 and len(targets) >= (impact_qty * 2):
-                                            affected = random.sample(targets, impact_qty * 2)
-                                            moons = affected[:impact_qty]
-                                            crashes = affected[impact_qty:]
-
-                                            for moon in moons:
-                                                multiplier = random.randint(25, 50)
-                                                baseline = 100 + (self.unlocked_count * 10)
-                                                self.market_prices[moon] = (self.market_prices[moon] * multiplier) + baseline
-
-                                            for crash in crashes:
-                                                self.market_prices[crash] = 1
-
-                                            self.sync_artifact_prices()
-
-                                            self.buys_remaining = 1
-                                            self.sells_remaining = 1
-
-                                            moon_str = ", ".join(moons)
-                                            crash_str = ", ".join(crashes)
-
-                                            self.current_events.append(f"ARTIFACT INVOKED: {item} (Actions Reset to 1!)")
-                                        else:
-                                            self.current_events.append(f"ARTIFACT INVOKED: {item} - The market was too small for a crisis.")
-
-                                    elif item == "Political Favors":
-                                        all_possible = sorted(self.active_items + self.locked_items)
-                                        
-                                        def render_armory():
-                                            self.clear_screen()
-                                            print("=" * 200)
-                                            print(f"   {Colors.MAGENTA}*** ROYAL ARMORY (Political Favors) ***{Colors.RESET}")
-                                            print("=" * 200)
-
-                                            def format_armory(idx, it):
-                                                return f"[{idx + 1:<2}] {it:<45}"
-
-                                            self.print_3_columns(all_possible, format_armory)
-                                            print("=" * 200)
-
-                                        try:
-                                            # Using the custom_renderer prevents the main dashboard from wiping our cool menu!
-                                            fav_idx = int(self.interactive_input(f"Enter the number of the item you want 10,000 of (1-{len(all_possible)}): ", custom_renderer=render_armory)) - 1
-                                            if 0 <= fav_idx < len(all_possible):
-                                                target_item = all_possible[fav_idx]
-
-                                                self.inventory[item] -= 1
-                                                if self.inventory[item] == 0:
-                                                    self.average_cost[item] = 0
-
-                                                if target_item not in self.inventory:
-                                                    self.inventory[target_item] = 0
-                                                    self.average_cost[target_item] = 0
-
-                                                current_qty = self.inventory.get(target_item, 0)
-                                                new_qty = current_qty + 10000
-                                                self.inventory[target_item] = new_qty
-                                                
-                                                self.buys_remaining = 1
-                                                self.sells_remaining = 1
-
-                                                self.current_events.append(f"ARTIFACT INVOKED: Political Favors - The Crown granted you 10,000 {target_item}! (Actions Reset to 1!)")
-                                            else:
-                                                print("Invalid selection. Invocation cancelled.")
-                                                time.sleep(1)
-                                        except ValueError:
-                                            print("Invalid input. Invocation cancelled.")
-                                            time.sleep(1)
-
-                                    elif item == "Owl-Chemist":
-                                        try:
-                                            source_idx_str = self.interactive_input(f"Enter the dashboard number of the item you want to convert FROM: ")
-                                            source_idx = int(source_idx_str) - 1
-                                            if 0 <= source_idx < len(self.display_items):
-                                                source_item = self.display_items[source_idx]
-                                                max_qty = self.inventory.get(source_item, 0)
-
-                                                if max_qty > 0 and source_item not in self.artifacts:
-                                                    source_price = self.market_prices.get(source_item, 1)
-                                                    source_color = self.get_price_color(source_price)
-
-                                                    input_qty = self.interactive_input(f"How many {source_color}{source_item}{Colors.RESET} would you like to convert? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
-                                                    qty = self.parse_qty(input_qty, max_qty)
-
-                                                    if 0 < qty <= max_qty:
-                                                        all_possible = sorted(self.active_items + self.locked_items)
-                                                        
-                                                        def render_alchemy():
-                                                            self.clear_screen()
-                                                            print("=" * 200)
-                                                            print(f"   {Colors.MAGENTA}*** ALCHEMY LAB (Owl-Chemist) ***{Colors.RESET}")
-                                                            print("=" * 200)
-
-                                                            def format_alchemy(idx, it):
-                                                                return f"[{idx + 1:<2}] {it:<45}"
-
-                                                            self.print_3_columns(all_possible, format_alchemy)
-                                                            print("=" * 200)
-
-                                                        try:
-                                                            target_idx = int(self.interactive_input(f"Enter the number of the item you want to convert INTO (1-{len(all_possible)}): ", custom_renderer=render_alchemy)) - 1
-                                                            if 0 <= target_idx < len(all_possible):
-                                                                target_item = all_possible[target_idx]
-
-                                                                if source_item == target_item:
-                                                                    print("You cannot convert an item into itself!")
-                                                                    time.sleep(1)
-                                                                else:
-                                                                    self.inventory[item] -= 1
-                                                                    if self.inventory[item] == 0:
-                                                                        self.average_cost[item] = 0
-
-                                                                    self.inventory[source_item] -= qty
-                                                                    if self.inventory[source_item] == 0:
-                                                                        self.average_cost[source_item] = 0
-
-                                                                    if target_item not in self.inventory:
-                                                                        self.inventory[target_item] = 0
-                                                                        self.average_cost[target_item] = 0
-
-                                                                    current_target_qty = self.inventory.get(target_item, 0)
-                                                                    new_target_qty = current_target_qty + qty
-                                                                    self.inventory[target_item] = new_target_qty
-                                                                    
-                                                                    self.buys_remaining = 1
-                                                                    self.sells_remaining = 1
-
-                                                                    self.current_events.append(f"ARTIFACT INVOKED: Owl-Chemist - Converted {qty:,} {source_item} into {target_item}! (Actions Reset to 1!)")
-                                                            else:
-                                                                print("Invalid selection. Invocation cancelled.")
-                                                                time.sleep(1)
-                                                        except ValueError:
-                                                            print("Invalid input. Invocation cancelled.")
-                                                            time.sleep(1)
-                                                    else:
-                                                        print("Invalid quantity. Invocation cancelled.")
-                                                        time.sleep(1)
-                                                else:
-                                                    print("You cannot convert that item. Invocation cancelled.")
-                                                    time.sleep(1)
-                                            else:
-                                                print("Invalid item number. Invocation cancelled.")
-                                                time.sleep(1)
-                                        except ValueError:
-                                            print("Invalid input. Invocation cancelled.")
-                                            time.sleep(1)
-                                    elif item == "Fairy Bug Net":
-                                            self.inventory[item] -= 1
-                                            if self.inventory[item] == 0:
-                                                self.average_cost[item] = 0
-
-                                            effect = random.randint(1, 4)
-
-                                            if effect == 1:
-                                                # 1. Double a random owned item
-                                                owned_items = [i for i, q in self.inventory.items() if q > 0]
-                                                if owned_items:
-                                                    target = random.choice(owned_items)
-                                                    qty = self.inventory[target]
-                                                    
-                                                    # Halve average cost since the new items are free
-                                                    self.average_cost[target] = self.average_cost[target] // 2 
-                                                    self.inventory[target] += qty
-                                                    self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy doubled your {target} ({qty:,} -> {self.inventory[target]:,})!")
-                                                else:
-                                                    self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - You own nothing to double! The fairy laughs and escapes.")
-
-                                            elif effect == 2:
-                                                # 2. Unlock 5-15 items and grant 10,000 of each
-                                                unlock_amount = random.randint(5, 15)
-                                                actual_unlocks = min(unlock_amount, len(self.locked_items))
-                                                
-                                                if actual_unlocks > 0:
-                                                    unlocked_names = []
-                                                    for _ in range(actual_unlocks):
-                                                        idx = random.randint(0, len(self.locked_items) - 1)
-                                                        new_item = self.locked_items.pop(idx)
-                                                        self.active_items.append(new_item)
-                                                        
-                                                        self.inventory[new_item] = 10000
-                                                        self.average_cost[new_item] = 0 
-                                                        
-                                                        self.unlocked_count += 1
-                                                        self.current_market.append(new_item)
-                                                        
-                                                        # --- NEW: Generate a market price so it is tradable immediately ---
-                                                        hex_index = len(self.market_prices) * 2
-                                                        hex_pair = self.current_hash[hex_index : hex_index+2]
-                                                        raw_hash_price = int(hex_pair, 16) if hex_pair else random.randint(10, 250)
-                                                        scaling_bonus = self.unlocked_count * 5
-                                                        self.market_prices[new_item] = max(1, raw_hash_price + scaling_bonus)
-                                                        # -----------------------------------------------------------------
-
-                                                        unlocked_names.append(new_item)
-                                                        
-                                                    self.current_market.sort()
-                                                    self.sync_artifact_prices()
-                                                    self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy unlocked {actual_unlocks} items and gave you 10,000 of each! ({', '.join(unlocked_names)})")
-                                                else:
-                                                    self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
-
-                                            elif effect == 3:
-                                                # 3. Force a Grand Market including all owned locked items
-                                                all_to_market = set(self.active_items)
-                                                for inv_item, q in self.inventory.items():
-                                                    if q > 0 and inv_item not in self.artifacts:
-                                                        all_to_market.add(inv_item)
-                                                
-                                                self.current_market = []
-                                                
-                                                # Generate new hashes to calculate prices
-                                                total_artifacts = sum(self.inventory.get(art, 0) for art in self.artifacts)
-                                                seed_string = f"run_{self.run_id}_money_{self.money}_score_{self.total_score}_unlocked_{self.unlocked_count}_arts_{total_artifacts}_week_{self.week}_fairy"
-                                                seed_string_two = f"run_{self.run_id}_week_{self.week}_score_{self.total_score}_unlocked_{self.unlocked_count}_money_{self.money}_fairy"
-                                                market_hash = self.get_market_hash(seed_string, seed_string_two)
-                                                self.current_hash = market_hash
-                                                
-                                                normal_item_count = 0
-                                                for m_item in sorted(list(all_to_market)):
-                                                    self.current_market.append(m_item)
-                                                    hex_pair = self.current_hash[normal_item_count*2 : (normal_item_count*2)+2]
-                                                    raw_hash_price = int(hex_pair, 16) if hex_pair else 10 
-                                                    scaling_bonus = self.unlocked_count * 5
-                                                    self.market_prices[m_item] = max(1, raw_hash_price + scaling_bonus)
-                                                    normal_item_count += 1
-                                                
-                                                self.roll_for_artifact(market_hash, is_grand_market=True)
-                                                self.current_market.sort()
-                                                self.sync_artifact_prices()
-                                                self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - The fairy forced a massive Grand Market! Everything you own is now tradable!")
-
-                                            elif effect == 4:
-                                                # 4. Summon all other artifacts to the market
-                                                other_arts = ["Black Swan Catalyst", "Political Favors", "Smuggler's Writ", "Owl-Chemist"]
-                                                for art in other_arts:
-                                                    if art not in self.current_market:
-                                                        self.current_market.append(art)
-                                                    self.market_prices[art] = 0 
-                                                    self.artifact_stock[art] = 10 
-                                                
-                                                self.sync_artifact_prices()
-                                                self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy summoned the other 4 legendary artifacts to the market!")
-
-                                            # Reset actions
-                                            self.buys_remaining = 1
-                                            self.sells_remaining = 1
-                                else:
-                                    print("Artifact invocation cancelled.")
-                                    time.sleep(1)
-                            else:
-                                print(f"You don't possess a {item} to use!")
-                                time.sleep(1)
-
+                        if item not in self.market_prices:
+                            print(f"ERROR: No merchants are buying {item} this week!")
+                            time.sleep(1)
                         else:
-                            # Not an artifact, verify standard sell actions
-                            if self.sells_remaining <= 0:
-                                print("You have exhausted your Sell actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
-                                time.sleep(2)
-                                continue
+                            price = self.market_prices[item]
+                            max_qty = self.inventory.get(item, 0)
 
-                            if item not in self.market_prices:
-                                print(f"ERROR: No merchants are buying {item} this week!")
-                                time.sleep(1)
-                            else:
-                                price = self.market_prices[item]
-                                max_qty = self.inventory.get(item, 0)
+                            if max_qty > 0:
+                                item_color = self.get_price_color(price)
+                                input_qty = self.interactive_input(f"How many {item_color}{item}{Colors.RESET} would you like to sell? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
+                                qty = self.parse_qty(input_qty, max_qty)
 
-                                if max_qty > 0:
-                                    item_color = self.get_price_color(price)
-                                    input_qty = self.interactive_input(f"How many {item_color}{item}{Colors.RESET} would you like to sell? (Max: {max_qty}, [A]ll/[H]alf/[Q]uarter): ")
-                                    qty = self.parse_qty(input_qty, max_qty)
+                                if 0 < qty <= max_qty:
+                                    revenue = price * qty
+                                    self.money += revenue
+                                    self.total_score += revenue
+                                    self.inventory[item] -= qty
 
-                                    if 0 < qty <= max_qty:
-                                        revenue = price * qty
-                                        self.money += revenue
-                                        self.total_score += revenue
-                                        self.inventory[item] -= qty
+                                    if self.inventory[item] == 0:
+                                        self.average_cost[item] = 0
 
-                                        if self.inventory[item] == 0:
-                                            self.average_cost[item] = 0
-
-                                        self.sells_remaining -= 1
-                                        self.current_events.append(f"SOLD: {qty:,} {item} for ${revenue:,}")
-                                    else:
-                                        print(f"Invalid quantity or you don't have that many {item}!")
-                                        time.sleep(1)
+                                    self.sells_remaining -= 1
+                                    self.current_events.append(f"SOLD: {qty:,} {item} for ${revenue:,}")
                                 else:
-                                    print(f"You don't have any {item} to sell!")
+                                    print(f"Invalid quantity or you don't have that many {item}!")
                                     time.sleep(1)
+                            else:
+                                print(f"You don't have any {item} to sell!")
+                                time.sleep(1)
                     else:
                         print("Invalid item number!")
                         time.sleep(1)
@@ -1536,7 +1577,7 @@ class TradeTycoon:
                     print(f"   {Colors.MAGENTA}*** PRESTIGE ***{Colors.RESET}")
                     print("=" * 200)
 
-                    bonus_gp = int(self.total_score ** (1/4.0))
+                    bonus_gp = int(self.total_score ** (1/4.0)) * self.week
 
                     print(f" You have cornered the market and unlocked every good in the realm!")
                     print(f" If you Prestige, your empire will reset, but you will retain the following perks:")
@@ -1547,30 +1588,47 @@ class TradeTycoon:
                     # Uses standard input to prevent redrawing the screen!
                     confirm = input("\n (Y/N): ").strip().lower()
                     if confirm == 'y':
-                        print("\n Which artifact would you like to keep?")
-                        for idx, art in enumerate(self.artifacts):
-                            print(f" [{idx + 1}] {art}")
+                        # --- MODIFIED PRESTIGE ARTIFACT LOGIC ---
+                        # 1. Filter to only artifacts the player actually owns
+                        owned_artifacts = [art for art in self.artifacts if self.inventory.get(art, 0) > 0]
 
-                        try:
-                            art_choice = int(input(" Enter number (1-5): ")) - 1
-                            if 0 <= art_choice < len(self.artifacts):
-                                chosen_art = self.artifacts[art_choice]
-                            else:
-                                print(" Invalid selection. The Guild assigns you a Smuggler's Writ.")
-                                chosen_art = self.artifacts[0]
-                                time.sleep(1)
-                        except ValueError:
-                            print(" Invalid input. The Guild assigns you a Smuggler's Writ.")
-                            chosen_art = self.artifacts[0]
-                            time.sleep(1)
+                        if owned_artifacts:
+                            print("\n Which artifact would you like to keep?")
+                            for idx, art in enumerate(owned_artifacts):
+                                qty = self.inventory[art]
+                                print(f" [{idx + 1}] {art} (Owned: {qty:,})")
 
-                        kept_qty = max(1, self.inventory.get(chosen_art, 0))
+                            try:
+                                # Dynamically adjust the input range based on what they own
+                                art_choice = int(input(f" Enter number (1-{len(owned_artifacts)}): ")) - 1
+                                if 0 <= art_choice < len(owned_artifacts):
+                                    chosen_art = owned_artifacts[art_choice]
+                                else:
+                                    chosen_art = owned_artifacts[0]
+                                    print(f" Invalid selection. The Guild securely packs your {chosen_art} as your heirloom.")
+                                    time.sleep(2)
+                            except ValueError:
+                                chosen_art = owned_artifacts[0]
+                                print(f" Invalid input. The Guild securely packs your {chosen_art} as your heirloom.")
+                                time.sleep(2)
+
+                            kept_qty = self.inventory[chosen_art]
+                        else:
+                            print("\n You possess no legendary artifacts to pass down to the next generation.")
+                            time.sleep(2)
+                            chosen_art = None
+                            kept_qty = 0
 
                         # --- RESET THE GAME STATE USING THE NEW HELPER FUNCTION ---
                         self.reset_game_state(bonus_gp=bonus_gp, kept_artifact=chosen_art, kept_qty=kept_qty)
 
                         self.generate_market()
-                        self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,} and {kept_qty:,}x {chosen_art}."]
+                        
+                        # Dynamically change the success message depending on if they had an artifact
+                        if chosen_art:
+                            self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,} and {kept_qty:,}x {chosen_art}."]
+                        else:
+                            self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,}."]
 
                     else:
                         print(" Prestige cancelled.")
