@@ -464,7 +464,8 @@ class TradeTycoon:
     def parse_qty(self, user_input, max_qty):
         val = user_input.lower().strip()
         if val in ['a', 'all']: return max_qty
-        if val in ['h', 'half']: return max_qty // 2
+        # --- NEW: Half quantity forces a round-up ---
+        if val in ['h', 'half']: return (max_qty + 1) // 2
         if val in ['q', 'quarter']: return max_qty // 4
         try:
             qty = int(val)
@@ -814,14 +815,20 @@ class TradeTycoon:
                         time.sleep(2)
                         continue
 
+                    # --- NEW: Calculate the normal maximum price to avoid inflated Black Swan items ---
+                    normal_max_price = 255 + (self.unlocked_count * 5)
+
                     valid_indices = [
                         str(i + 1) for i, item in enumerate(self.display_items) 
                         if item not in self.artifacts 
                         and item in self.market_prices 
-                        and (self.inventory.get(item, 0) == 0 or self.market_prices[item] <= self.average_cost.get(item, 0))
+                        and (
+                            (self.inventory.get(item, 0) == 0 and self.market_prices[item] <= normal_max_price) or 
+                            (self.inventory.get(item, 0) > 0 and self.market_prices[item] <= self.average_cost.get(item, 0))
+                        )
                     ]
                     if not valid_indices:
-                        print("  Easy Mode found no deals (no items are <= your average cost or unowned).")
+                        print("  Easy Mode found no deals (no items are <= your average cost or unowned at fair market value).")
                         time.sleep(2)
                         continue
                     
@@ -1453,8 +1460,9 @@ class TradeTycoon:
                             
                             if amount_input in ['a', 'all']:
                                 qty = max_qty
+                            # --- NEW: Half quantity forces a round-up ---
                             elif amount_input in ['h', 'half']:
-                                qty = max_qty // 2
+                                qty = (max_qty + 1) // 2
                             elif amount_input in ['q', 'quarter']:
                                 qty = max_qty // 4
                                 
