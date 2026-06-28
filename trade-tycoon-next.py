@@ -1342,7 +1342,7 @@ class TradeTycoon:
                     time.sleep(1)
 
             elif action == 's':
-                item_input = self.interactive_input(f"Enter item number(s) to sell, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
+                item_input = self.interactive_input(f"  Enter item number(s) to sell, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
                 if not item_input: continue
 
                 if item_input == 'e':
