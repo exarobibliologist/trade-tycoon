@@ -1577,7 +1577,7 @@ class TradeTycoon:
                     print(f"   {Colors.MAGENTA}*** PRESTIGE ***{Colors.RESET}")
                     print("=" * 200)
 
-                    bonus_gp = int(self.total_score ** (1/4.0)) * self.week
+                    bonus_gp = int(self.total_score ** (1/5.0)) * self.week
 
                     print(f" You have cornered the market and unlocked every good in the realm!")
                     print(f" If you Prestige, your empire will reset, but you will retain the following perks:")
