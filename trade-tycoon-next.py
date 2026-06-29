@@ -36,6 +36,7 @@ class TradeTycoon:
         # --- Single Source of Truth for Game Variables ---
         self.run_id = random.randint(99999, 9999999)
         self.money = 10000 + bonus_gp
+        self.debt = 0 # --- NEW: Debt Tracking ---
         self.week = 1
         self.unlock_cost = 500000
         self.unlocked_count = 0
@@ -236,6 +237,7 @@ class TradeTycoon:
                     normal_item_count += 1
 
                 self.roll_for_artifact(market_hash, is_grand_market=True)
+                self.sync_artifact_prices()
                 self.current_market.sort()
                 grand_msgs = [
                         "GRAND MARKET DAY! Merchants from all realms have gathered. Everything is available!",
@@ -428,10 +430,6 @@ class TradeTycoon:
                 ]
                 self.current_events.append(random.choice(magic_msgs))
 
-        # --- NEW MASTER RECALCULATION ---
-        # After all events resolve, ensure all artifacts match the final sum of the market!
-        self.sync_artifact_prices()
-
     def print_2_columns(self, items, formatter, start_idx=0):
         num_items = len(items)
         if num_items == 0:
@@ -478,6 +476,7 @@ class TradeTycoon:
         save_data = {
             "run_id": self.run_id,
             "money": self.money,
+            "debt": self.debt, # --- NEW: Save Debt State ---
             "week": self.week,
             "unlock_cost": self.unlock_cost,
             "unlocked_count": self.unlocked_count,
@@ -508,6 +507,7 @@ class TradeTycoon:
             # 1. Load the base numerical variables
             self.run_id = save_data.get("run_id", random.randint(100000, 999999))
             self.money = save_data.get("money", self.money)
+            self.debt = save_data.get("debt", 0) # --- NEW: Load Debt State ---
             self.week = save_data.get("week", self.week)
             self.unlock_cost = save_data.get("unlock_cost", self.unlock_cost)
             self.total_score = save_data.get("total_score", self.total_score)
@@ -585,6 +585,9 @@ class TradeTycoon:
                     print(f"   {Colors.RED}( {event} ){Colors.RESET}")
                 elif event.startswith("GAME SAVED") or event.startswith("GAME LOADED"):
                     print(f"   {Colors.MAGENTA}( *** {event} *** ){Colors.RESET}")
+                elif event.startswith("DEBT:") or event.startswith("LOAN:"):
+                    # Give Moneylender events a warning color
+                    print(f"   {Colors.RED}( *** {event} *** ){Colors.RESET}") 
                 else:
                     print(f"   {Colors.YELLOW}( *** {event} *** ){Colors.RESET}")
 
@@ -605,7 +608,9 @@ class TradeTycoon:
 
         print("=" * 200)
 
-        print(f" Current Money: {Colors.YELLOW}${self.money:,}{Colors.RESET}    ||    Inventory Value: ${total_inv_value:,}    ||    Total Value: ${overall_total:,}    ||    Current Score: {self.total_score:,}")
+        # --- DYNAMIC DEBT DISPLAY ---
+        debt_str = f"    ||    Debt: {Colors.RED}${self.debt:,}{Colors.RESET}" if getattr(self, 'debt', 0) > 0 else ""
+        print(f" Current Money: {Colors.YELLOW}${self.money:,}{Colors.RESET}{debt_str}    ||    Inventory Value: ${total_inv_value:,}    ||    Total Value: ${overall_total:,}    ||    Current Score: {self.total_score:,}")
 
         print("=" * 200)
 
@@ -716,7 +721,7 @@ class TradeTycoon:
             unlock_prompt = f"{Colors.MAGENTA}*** YOU WON! Everything Is Unlocked! [{Colors.YELLOW}P{Colors.MAGENTA}]restige? ***{Colors.RESET}"
 
         page_nav = f" || [{Colors.RED}←{Colors.RESET}] PREV/NEXT [{Colors.RED}→{Colors.RESET}] {Colors.RED}Prev/Next Page{Colors.RESET}" if self.total_pages > 1 else ""
-        print(f"\n  [{buy_color}B{Colors.RESET}]uy ({self.buys_remaining}) | [{sell_color}S{Colors.RESET}]ell ({self.sells_remaining}) | [{Colors.YELLOW}A{Colors.RESET}]rtifact | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt}\n  USING ARTIFACTS AND UNLOCKING ITEMS WILL RESET BUY/SELL ACTIONS TO FULL                            (Page {self.current_page + 1} of {self.total_pages}){page_nav}")
+        print(f"\n  [{buy_color}B{Colors.RESET}]uy ({self.buys_remaining}) | [{sell_color}S{Colors.RESET}]ell ({self.sells_remaining}) | [{Colors.YELLOW}A{Colors.RESET}]rtifact | [{Colors.RED}M{Colors.RESET}]oneylender | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt}\n  USING ARTIFACTS AND UNLOCKING ITEMS WILL RESET BUY/SELL ACTIONS TO FULL                            (Page {self.current_page + 1} of {self.total_pages}){page_nav}")
 
         print("=" * 200)
         
@@ -1094,7 +1099,7 @@ class TradeTycoon:
                                         for crash in crashes:
                                             self.market_prices[crash] = 1
 
-                                        self.sync_artifact_prices()
+                                        # self.sync_artifact_prices() <-- Removed because I don't like it changing the artifact prices midweek
 
                                         self.buys_remaining = 1
                                         self.sells_remaining = 1
@@ -1278,7 +1283,7 @@ class TradeTycoon:
                                                     unlocked_names.append(new_item)
                                                     
                                                 self.current_market.sort()
-                                                self.sync_artifact_prices()
+                                                # self.sync_artifact_prices()
                                                 self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy unlocked {actual_unlocks} items and gave you 10,000 of each! ({', '.join(unlocked_names)})")
                                             else:
                                                 self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
@@ -1488,10 +1493,69 @@ class TradeTycoon:
                         print("  You do not have enough inventory of those items to sell.")
                         time.sleep(1)
 
+            elif action == 'm':
+                # --- NEW: THE MONEYLENDER LOGIC ---
+                self.clear_screen()
+                print("=" * 200)
+                print(f"   {Colors.RED}*** THE MONEYLENDER ***{Colors.RESET}")
+                print("=" * 200)
+                print(f"  Current Money: ${self.money:,}")
+                print(f"  Current Debt:  ${self.debt:,}")
+                print(f"  Interest Rate: 10% per week")
+                print("=" * 200)
+                print("  Would you like to [B]orrow or [R]epay? (Press any other key to cancel): ", end="", flush=True)
+                
+                m_action = self.get_keypress().lower()
+                print(m_action.upper())
+
+                if m_action == 'b':
+                    amt_str = self.interactive_input("  How much would you like to borrow? ")
+                    try:
+                        amt = int(amt_str)
+                        if amt > 0:
+                            self.money += amt
+                            self.debt += amt
+                            self.current_events.append(f"LOAN: You borrowed ${amt:,} from the Moneylender.")
+                        else:
+                            print("  Invalid amount.")
+                            time.sleep(1)
+                    except ValueError:
+                        print("  Invalid amount.")
+                        time.sleep(1)
+                elif m_action == 'r':
+                    if self.debt <= 0:
+                        print("  You do not have any outstanding debt.")
+                        time.sleep(1)
+                    elif self.money <= 0:
+                        print("  You have no money to repay your debt.")
+                        time.sleep(1)
+                    else:
+                        amt_str = self.interactive_input(f"  How much would you like to repay? (Max: {min(self.money, self.debt):,}, [A]ll/[H]alf/[Q]uarter): ")
+                        repay_amt = self.parse_qty(amt_str, min(self.money, self.debt))
+                        
+                        if 0 < repay_amt <= self.money and repay_amt <= self.debt:
+                            self.money -= repay_amt
+                            self.debt -= repay_amt
+                            self.current_events.append(f"REPAYMENT: You paid ${repay_amt:,} toward your debt.")
+                        else:
+                            print("  Invalid amount.")
+                            time.sleep(1)
+                else:
+                    pass # Cancelled
+
             elif action == 'w':
                 self.week += 1
                 self.buys_remaining = 1
                 self.sells_remaining = 1
+                
+                # --- NEW: Accrue Interest on Debt ---
+                if getattr(self, 'debt', 0) > 0:
+                    interest = int(self.debt * 0.10)
+                    if interest < 1: 
+                        interest = 1 # Minimum 1 gold interest charge
+                    self.debt += interest
+                    self.current_events.append(f"DEBT: The Moneylender charged you ${interest:,} in interest. Total debt is now ${self.debt:,}.")
+
                 self.generate_market()
                 self.trigger_event()
 
@@ -1554,7 +1618,7 @@ class TradeTycoon:
                             self.market_prices[m_item] = max(1, raw_hash_price + scaling_bonus)
 
                         self.current_market.sort()
-                        self.sync_artifact_prices()
+                        # self.sync_artifact_prices()
                         
                         self.buys_remaining = 1
                         self.sells_remaining = 1
@@ -1584,6 +1648,12 @@ class TradeTycoon:
                     time.sleep(1)
 
             elif action == 'p':
+                # --- NEW: The Clean Slate Law ---
+                if getattr(self, 'debt', 0) > 0:
+                    print(f"  The Guild refuses to honor your legacy. You must pay off your ${self.debt:,} debt to the Moneylender before you can Prestige!")
+                    time.sleep(3)
+                    continue
+
                 if not self.locked_items:
                     self.clear_screen()
                     print("=" * 200)
