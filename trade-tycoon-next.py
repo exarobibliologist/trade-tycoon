@@ -37,6 +37,7 @@ class TradeTycoon:
         self.run_id = random.randint(99999, 9999999)
         self.money = 10000 + bonus_gp
         self.debt = 0 # --- NEW: Debt Tracking ---
+        self.loan_weeks = 0 # --- NEW: Loan Duration Tracker ---
         self.week = 1
         self.unlock_cost = 500000
         self.unlocked_count = 0
@@ -477,6 +478,7 @@ class TradeTycoon:
             "run_id": self.run_id,
             "money": self.money,
             "debt": self.debt, # --- NEW: Save Debt State ---
+            "loan_weeks": getattr(self, 'loan_weeks', 0), # --- NEW: Save Loan Tracker ---
             "week": self.week,
             "unlock_cost": self.unlock_cost,
             "unlocked_count": self.unlocked_count,
@@ -508,6 +510,7 @@ class TradeTycoon:
             self.run_id = save_data.get("run_id", random.randint(100000, 999999))
             self.money = save_data.get("money", self.money)
             self.debt = save_data.get("debt", 0) # --- NEW: Load Debt State ---
+            self.loan_weeks = save_data.get("loan_weeks", 0) # --- NEW: Load Loan Tracker ---
             self.week = save_data.get("week", self.week)
             self.unlock_cost = save_data.get("unlock_cost", self.unlock_cost)
             self.total_score = save_data.get("total_score", self.total_score)
@@ -640,8 +643,10 @@ class TradeTycoon:
 
             if item in self.market_prices:
                 m_price = self.market_prices[item]
-                mkt_str = f"[Market: ${m_price:,}]"
-
+                
+                # --- NEW: Build the strings safely inside the market check ---
+                raw_mkt = f" --- [Market: ${m_price:,}]"
+                
                 if item in self.artifacts:
                     mkt_color = Colors.MAGENTA
                     if qty > 0:
@@ -659,9 +664,13 @@ class TradeTycoon:
                     else:
                         inv_color = Colors.GRAY
                         idx_color = Colors.RESET
+                        
+                # Add the colors for printing
+                colored_mkt = f" {Colors.GRAY}---{Colors.RESET} {mkt_color}[Market: ${m_price:,}]{Colors.RESET}"
             else:
-                mkt_color = Colors.GRAY
-                mkt_str = "[Market: N/A]"
+                # --- NEW: If not in market, strings are completely blank! ---
+                raw_mkt = ""
+                colored_mkt = ""
 
                 if item in self.artifacts:
                     if qty > 0:
@@ -675,14 +684,22 @@ class TradeTycoon:
                     inv_color = Colors.GRAY
                     idx_color = Colors.GRAY
 
-            raw_inv_str = f"[{idx + 1:<2}] {item}: ({qty:,} @ ${avg:,})"
-            visible_text = f"{raw_inv_str} --- {mkt_str}"
+            # Hide average cost for untradable artifacts
+            if item in self.artifacts:
+                inv_details = f"({qty:,})"
+            else:
+                inv_details = f"({qty:,} @ ${avg:,})"
+
+            # Calculate padding strictly on the raw text without ANSI color codes
+            raw_inv_str = f"[{idx + 1:<2}] {item}: {inv_details}"
+            visible_text = f"{raw_inv_str}{raw_mkt}"
             visible_len = len(visible_text)
 
-            padding = " " * max(0, 95 - visible_len) # <-- Controls the space between the columns
+            padding = " " * max(0, 95 - visible_len)
 
-            colored_inv_str = f"{idx_color}[{idx + 1:<2}]{Colors.RESET} {inv_color}{item}: ({qty:,} @ ${avg:,}){Colors.RESET}"
-            return f"{colored_inv_str} {Colors.GRAY}---{Colors.RESET} {mkt_color}{mkt_str}{Colors.RESET}{padding}"
+            # Combine the final colored strings
+            colored_inv_str = f"{idx_color}[{idx + 1:<2}]{Colors.RESET} {inv_color}{item}: {inv_details}{Colors.RESET}"
+            return f"{colored_inv_str}{colored_mkt}{padding}"
 
         # --- ARTIFACT PINNED DISPLAY ---
         print(f" {Colors.MAGENTA}*** LEGENDARY ARTIFACTS *** {Colors.RESET}\n")
@@ -810,7 +827,7 @@ class TradeTycoon:
             self.event_scroll = 0 # Auto-snap to bottom on new action
 
             if action == 'b':
-                item_input = self.interactive_input(f"  Enter item number(s) to buy, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
+                item_input = self.interactive_input(f"  To buy, enter item number, comma-seperated list of numbers, or autofill list with [E]asy Mode: ", instant_keys=['e']).strip().lower()
                 if not item_input: continue
 
                 if item_input == 'e':
@@ -1316,7 +1333,7 @@ class TradeTycoon:
                                             self.roll_for_artifact(market_hash, is_grand_market=True)
                                             self.current_market.sort()
                                             self.sync_artifact_prices()
-                                            self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - The fairy forced a massive Grand Market! Everything you own is now tradable!")
+                                            self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - The fairy invites you to a Fairy Market where everything you own is tradable!")
 
                                         elif effect == 4:
                                             # 4. Summon all other artifacts to the market
@@ -1347,7 +1364,7 @@ class TradeTycoon:
                     time.sleep(1)
 
             elif action == 's':
-                item_input = self.interactive_input(f"  Enter item number(s) to sell, or [E]asy Mode: ", instant_keys=['e']).strip().lower()
+                item_input = self.interactive_input(f"  To sell, enter item number, comma-seperated list of numbers, or autofill list with [E]asy Mode: ", instant_keys=['e']).strip().lower()
                 if not item_input: continue
 
                 if item_input == 'e':
@@ -1501,7 +1518,10 @@ class TradeTycoon:
                 print("=" * 200)
                 print(f"  Current Money: ${self.money:,}")
                 print(f"  Current Debt:  ${self.debt:,}")
-                print(f"  Interest Rate: 10% per week")
+                
+                # Calculate what the NEXT hit will be to warn them!
+                upcoming_rate = getattr(self, 'loan_weeks', 0) + 1 if self.debt > 0 else 1
+                print(f"  Next Interest Rate: {upcoming_rate}% (Increases by +1% every week the loan is active!)")
                 print("=" * 200)
                 print("  Would you like to [B]orrow or [R]epay? (Press any other key to cancel): ", end="", flush=True)
                 
@@ -1536,7 +1556,13 @@ class TradeTycoon:
                         if 0 < repay_amt <= self.money and repay_amt <= self.debt:
                             self.money -= repay_amt
                             self.debt -= repay_amt
-                            self.current_events.append(f"REPAYMENT: You paid ${repay_amt:,} toward your debt.")
+                            
+                            # --- NEW: Reset the ticking time bomb if paid off! ---
+                            if self.debt == 0:
+                                self.loan_weeks = 0 
+                                self.current_events.append(f"REPAYMENT: You paid off your debt completely! The interest rate resets.")
+                            else:
+                                self.current_events.append(f"REPAYMENT: You paid ${repay_amt:,} toward your debt.")
                         else:
                             print("  Invalid amount.")
                             time.sleep(1)
@@ -1548,13 +1574,20 @@ class TradeTycoon:
                 self.buys_remaining = 1
                 self.sells_remaining = 1
                 
-                # --- NEW: Accrue Interest on Debt ---
+                # --- NEW: Accrue Progressive Interest on Debt ---
                 if getattr(self, 'debt', 0) > 0:
-                    interest = int(self.debt * 0.10)
+                    # Safety check for old save files
+                    if not hasattr(self, 'loan_weeks'): self.loan_weeks = 0 
+                    
+                    self.loan_weeks += 1 # The loan gets older
+                    
+                    interest_rate = self.loan_weeks / 100.0
+                    interest = int(self.debt * interest_rate)
                     if interest < 1: 
                         interest = 1 # Minimum 1 gold interest charge
+                        
                     self.debt += interest
-                    self.current_events.append(f"DEBT: The Moneylender charged you ${interest:,} in interest. Total debt is now ${self.debt:,}.")
+                    self.current_events.append(f"DEBT: The Moneylender charged ${interest:,} in interest ({self.loan_weeks}% rate). Total debt: ${self.debt:,}.")
 
                 self.generate_market()
                 self.trigger_event()
@@ -1650,8 +1683,7 @@ class TradeTycoon:
             elif action == 'p':
                 # --- NEW: The Clean Slate Law ---
                 if getattr(self, 'debt', 0) > 0:
-                    print(f"  The Guild refuses to honor your legacy. You must pay off your ${self.debt:,} debt to the Moneylender before you can Prestige!")
-                    time.sleep(3)
+                    self.current_events.append(f"  The Guild refuses to honor your legacy. You must pay off your ${self.debt:,} debt to the Moneylender before you can Prestige!")
                     continue
 
                 if not self.locked_items:
