@@ -831,22 +831,21 @@ class TradeTycoon:
                 if not item_input: continue
 
                 if item_input == 'e':
-                    # EASY MODE: Select items not owned OR where market price <= average cost
                     if self.buys_remaining <= 0:
                         print("  You have exhausted your Buy actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
                         time.sleep(2)
                         continue
 
-                    # --- NEW: Calculate the normal maximum price to avoid inflated Black Swan items ---
                     normal_max_price = 255 + (self.unlocked_count * 5)
 
+                    # --- NEW: Easy Buy treats $0 avg cost items like empty stacks to quickly establish a market baseline! ---
                     valid_indices = [
                         str(i + 1) for i, item in enumerate(self.display_items) 
                         if item not in self.artifacts 
                         and item in self.market_prices 
                         and (
-                            (self.inventory.get(item, 0) == 0 and self.market_prices[item] <= normal_max_price) or 
-                            (self.inventory.get(item, 0) > 0 and self.market_prices[item] <= self.average_cost.get(item, 0))
+                            (self.average_cost.get(item, 0) == 0 and self.market_prices[item] <= normal_max_price) or 
+                            (self.average_cost.get(item, 0) > 0 and self.market_prices[item] <= self.average_cost.get(item, 0))
                         )
                     ]
                     if not valid_indices:
@@ -878,7 +877,6 @@ class TradeTycoon:
                             print(f"  ERROR: {item} is not being traded in the market this week!")
                             time.sleep(1)
                         else:
-                            # --- NEW: Block regular items if out of actions, but let artifacts pass! ---
                             if item not in self.artifacts and self.buys_remaining <= 0:
                                 print("  You have exhausted your Buy actions for regular items this week! (Artifacts can still be purchased).")
                                 time.sleep(2)
@@ -903,13 +901,16 @@ class TradeTycoon:
                                     current_avg = self.average_cost.get(item, 0)
                                     new_qty = current_qty + qty
 
-                                    new_total_value = (current_qty * current_avg) + cost
-                                    self.average_cost[item] = new_total_value // new_qty
+                                    # --- NEW: Safely establish the baseline average cost so math doesn't stay stuck at $0 ---
+                                    if current_avg == 0:
+                                        self.average_cost[item] = price
+                                    else:
+                                        new_total_value = (current_qty * current_avg) + cost
+                                        self.average_cost[item] = new_total_value // new_qty
 
                                     self.money -= cost
                                     self.inventory[item] = new_qty
                                     
-                                    # --- NEW: Only consume a buy action if it's a regular item ---
                                     if item not in self.artifacts:
                                         self.buys_remaining -= 1
                                     
@@ -980,8 +981,12 @@ class TradeTycoon:
                                 current_avg = self.average_cost.get(item, 0)
                                 new_qty = current_qty + qty
                                 
-                                new_total_value = (current_qty * current_avg) + cost
-                                self.average_cost[item] = new_total_value // new_qty
+                                # --- NEW: Safely establish the baseline average cost so math doesn't stay stuck at $0 ---
+                                if current_avg == 0:
+                                    self.average_cost[item] = price
+                                else:
+                                    new_total_value = (current_qty * current_avg) + cost
+                                    self.average_cost[item] = new_total_value // new_qty
                                 
                                 self.money -= cost
                                 self.inventory[item] = new_qty
@@ -1116,8 +1121,6 @@ class TradeTycoon:
                                         for crash in crashes:
                                             self.market_prices[crash] = 1
 
-                                        # self.sync_artifact_prices() <-- Removed because I don't like it changing the artifact prices midweek
-
                                         self.buys_remaining = 1
                                         self.sells_remaining = 1
 
@@ -1144,7 +1147,6 @@ class TradeTycoon:
                                         print("=" * 200)
 
                                     try:
-                                        # Using the custom_renderer prevents the main dashboard from wiping our cool menu!
                                         fav_idx = int(self.interactive_input(f"  Enter the number of the item you want 10,000 of (1-{len(all_possible)}): ", custom_renderer=render_armory)) - 1
                                         if 0 <= fav_idx < len(all_possible):
                                             target_item = all_possible[fav_idx]
@@ -1211,6 +1213,10 @@ class TradeTycoon:
                                                                 print("You cannot convert an item into itself!")
                                                                 time.sleep(1)
                                                             else:
+                                                                # --- NEW: Capture average costs before deductions! ---
+                                                                source_avg = self.average_cost.get(source_item, 0)
+                                                                target_avg = self.average_cost.get(target_item, 0)
+
                                                                 self.inventory[item] -= 1
                                                                 if self.inventory[item] == 0:
                                                                     self.average_cost[item] = 0
@@ -1225,6 +1231,14 @@ class TradeTycoon:
 
                                                                 current_target_qty = self.inventory.get(target_item, 0)
                                                                 new_target_qty = current_target_qty + qty
+                                                                
+                                                                # --- NEW: Safely carry over the true value of the items ---
+                                                                if target_avg == 0:
+                                                                    self.average_cost[target_item] = source_avg
+                                                                else:
+                                                                    new_total_value = (current_target_qty * target_avg) + (qty * source_avg)
+                                                                    self.average_cost[target_item] = new_total_value // new_target_qty if new_target_qty > 0 else 0
+
                                                                 self.inventory[target_item] = new_target_qty
                                                                 
                                                                 self.buys_remaining = 1
@@ -1289,18 +1303,15 @@ class TradeTycoon:
                                                     self.unlocked_count += 1
                                                     self.current_market.append(new_item)
                                                     
-                                                    # --- NEW: Generate a market price so it is tradable immediately ---
                                                     hex_index = len(self.market_prices) * 2
                                                     hex_pair = self.current_hash[hex_index : hex_index+2]
                                                     raw_hash_price = int(hex_pair, 16) if hex_pair else random.randint(10, 250)
                                                     scaling_bonus = self.unlocked_count * 5
                                                     self.market_prices[new_item] = max(1, raw_hash_price + scaling_bonus)
-                                                    # -----------------------------------------------------------------
 
                                                     unlocked_names.append(new_item)
                                                     
                                                 self.current_market.sort()
-                                                # self.sync_artifact_prices()
                                                 self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy unlocked {actual_unlocks} items and gave you 10,000 of each! ({', '.join(unlocked_names)})")
                                             else:
                                                 self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
@@ -1368,13 +1379,19 @@ class TradeTycoon:
                 if not item_input: continue
 
                 if item_input == 'e':
-                    # EASY MODE: Select items where owned > 0 AND market price >= average cost
+                    # --- NEW: Easy Sell holds $0 items until they reach 50% of the max market value! ---
+                    normal_max_price = 255 + (self.unlocked_count * 5)
+                    good_sell_price = normal_max_price // 2
+
                     valid_indices = [
                         str(i + 1) for i, item in enumerate(self.display_items) 
                         if item not in self.artifacts 
                         and item in self.market_prices 
                         and self.inventory.get(item, 0) > 0 
-                        and self.market_prices[item] >= self.average_cost.get(item, 0)
+                        and (
+                            (self.average_cost.get(item, 0) > 0 and self.market_prices[item] >= self.average_cost.get(item, 0)) or
+                            (self.average_cost.get(item, 0) == 0 and self.market_prices[item] >= good_sell_price)
+                        )
                     ]
                     if not valid_indices:
                         print("  Easy Mode found no profitable items to sell.")
@@ -1482,7 +1499,6 @@ class TradeTycoon:
                             
                             if amount_input in ['a', 'all']:
                                 qty = max_qty
-                            # --- NEW: Half quantity forces a round-up ---
                             elif amount_input in ['h', 'half']:
                                 qty = (max_qty + 1) // 2
                             elif amount_input in ['q', 'quarter']:
@@ -1511,7 +1527,6 @@ class TradeTycoon:
                         time.sleep(1)
 
             elif action == 'm':
-                # --- NEW: THE MONEYLENDER LOGIC ---
                 self.clear_screen()
                 print("=" * 200)
                 print(f"   {Colors.RED}*** THE MONEYLENDER ***{Colors.RESET}")
@@ -1519,7 +1534,6 @@ class TradeTycoon:
                 print(f"  Current Money: ${self.money:,}")
                 print(f"  Current Debt:  ${self.debt:,}")
                 
-                # Calculate what the NEXT hit will be to warn them!
                 upcoming_rate = getattr(self, 'loan_weeks', 0) + 1 if self.debt > 0 else 1
                 print(f"  Next Interest Rate: {upcoming_rate}% (Increases by +1% every week the loan is active!)")
                 print("=" * 200)
@@ -1557,7 +1571,6 @@ class TradeTycoon:
                             self.money -= repay_amt
                             self.debt -= repay_amt
                             
-                            # --- NEW: Reset the ticking time bomb if paid off! ---
                             if self.debt == 0:
                                 self.loan_weeks = 0 
                                 self.current_events.append(f"REPAYMENT: You paid off your debt completely! The interest rate resets.")
@@ -1567,24 +1580,22 @@ class TradeTycoon:
                             print("  Invalid amount.")
                             time.sleep(1)
                 else:
-                    pass # Cancelled
+                    pass 
 
             elif action == 'w':
                 self.week += 1
                 self.buys_remaining = 1
                 self.sells_remaining = 1
                 
-                # --- NEW: Accrue Progressive Interest on Debt ---
                 if getattr(self, 'debt', 0) > 0:
-                    # Safety check for old save files
                     if not hasattr(self, 'loan_weeks'): self.loan_weeks = 0 
                     
-                    self.loan_weeks += 1 # The loan gets older
+                    self.loan_weeks += 1 
                     
                     interest_rate = self.loan_weeks / 100.0
                     interest = int(self.debt * interest_rate)
                     if interest < 1: 
-                        interest = 1 # Minimum 1 gold interest charge
+                        interest = 1 
                         
                     self.debt += interest
                     self.current_events.append(f"DEBT: The Moneylender charged ${interest:,} in interest ({self.loan_weeks}% rate). Total debt: ${self.debt:,}.")
@@ -1595,7 +1606,6 @@ class TradeTycoon:
             elif action == 'u':
                 if self.locked_items:
                     
-                    # Determine payment method for this batch to prevent accidental score usage
                     if self.money >= self.unlock_cost:
                         payment_mode = "Money"
                     elif self.total_score >= self.unlock_cost:
@@ -1615,11 +1625,10 @@ class TradeTycoon:
                             self.total_score -= self.unlock_cost
                             paid_with = "Score"
                         else:
-                            break # Stop the loop if we run out of our selected currency!
+                            break 
 
                         unlocked_any = True
 
-                        # --- NEW RANDOM UNLOCK LOGIC ---
                         unlock_hex = self.current_hash[-2:]
                         unlock_val = int(unlock_hex, 16)
                         unlock_index = unlock_val % len(self.locked_items)
@@ -1651,7 +1660,6 @@ class TradeTycoon:
                             self.market_prices[m_item] = max(1, raw_hash_price + scaling_bonus)
 
                         self.current_market.sort()
-                        # self.sync_artifact_prices()
                         
                         self.buys_remaining = 1
                         self.sells_remaining = 1
@@ -1681,7 +1689,6 @@ class TradeTycoon:
                     time.sleep(1)
 
             elif action == 'p':
-                # --- NEW: The Clean Slate Law ---
                 if getattr(self, 'debt', 0) > 0:
                     self.current_events.append(f"  The Guild refuses to honor your legacy. You must pay off your ${self.debt:,} debt to the Moneylender before you can Prestige!")
                     continue
@@ -1700,11 +1707,8 @@ class TradeTycoon:
                     print(f"  - {Colors.MAGENTA}Legendary Heirloom:{Colors.RESET} Keep your entire collected stack of 1 Artifact type (minimum 1)")
                     print("\n  Are you ready to pass the torch to the next generation?")
 
-                    # Uses standard input to prevent redrawing the screen!
                     confirm = input("\n  (Y/N): ").strip().lower()
                     if confirm == 'y':
-                        # --- MODIFIED PRESTIGE ARTIFACT LOGIC ---
-                        # 1. Filter to only artifacts the player actually owns
                         owned_artifacts = [art for art in self.artifacts if self.inventory.get(art, 0) > 0]
 
                         if owned_artifacts:
@@ -1714,7 +1718,6 @@ class TradeTycoon:
                                 print(f" [{idx + 1}] {art} (Owned: {qty:,})")
 
                             try:
-                                # Dynamically adjust the input range based on what they own
                                 art_choice = int(input(f" Enter number (1-{len(owned_artifacts)}): ")) - 1
                                 if 0 <= art_choice < len(owned_artifacts):
                                     chosen_art = owned_artifacts[art_choice]
@@ -1734,12 +1737,10 @@ class TradeTycoon:
                             chosen_art = None
                             kept_qty = 0
 
-                        # --- RESET THE GAME STATE USING THE NEW HELPER FUNCTION ---
                         self.reset_game_state(bonus_gp=bonus_gp, kept_artifact=chosen_art, kept_qty=kept_qty)
 
                         self.generate_market()
                         
-                        # Dynamically change the success message depending on if they had an artifact
                         if chosen_art:
                             self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,} and {kept_qty:,}x {chosen_art}."]
                         else:
