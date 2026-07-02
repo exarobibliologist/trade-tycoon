@@ -32,12 +32,18 @@ class TradeTycoon:
         # Trigger the initial state on load with default values
         self.reset_game_state()
 
-    def reset_game_state(self, bonus_gp=0, kept_artifact=None, kept_qty=0):
+    def reset_game_state(self, bonus_gp=0, kept_artifacts=None, kept_qtys=None):
         # --- Single Source of Truth for Game Variables ---
         self.run_id = random.randint(99999, 9999999)
         self.money = 10000 + bonus_gp
-        self.debt = 0 # --- NEW: Debt Tracking ---
-        self.loan_weeks = 0 # --- NEW: Loan Duration Tracker ---
+        self.debt = 0 
+        self.loan_weeks = 0 
+        
+        # --- NEW: Job Tracking Variables ---
+        self.completed_jobs = 0
+        self.active_jobs = []
+        self.available_jobs = []
+
         self.week = 1
         self.unlock_cost = 500000
         self.unlocked_count = 0
@@ -69,9 +75,10 @@ class TradeTycoon:
             self.inventory[art] = 0
             self.average_cost[art] = 0
 
-        # Inject the hoarded stack if Prestige arguments were passed
-        if kept_artifact and kept_qty > 0:
-            self.inventory[kept_artifact] = kept_qty
+        # --- UPDATED: Inject the hoarded stacks for multi-slot Prestige ---
+        if kept_artifacts and kept_qtys:
+            for art, qty in zip(kept_artifacts, kept_qtys):
+                self.inventory[art] = qty
 
         self.current_market = []
         self.market_prices = {}
@@ -165,6 +172,74 @@ class TradeTycoon:
 
             market_type = "GRAND MARKET" if is_grand_market else "MARKET"
             self.current_events.append(f"A LEGENDARY ARTIFACT HAS APPEARED IN THE {market_type}: {spawned_artifact}")
+
+    def generate_jobs(self):
+        """ --- NEW: Dynamic Quest Generator --- """
+        if not hasattr(self, 'available_jobs'): self.available_jobs = []
+        
+        while len(self.available_jobs) < 10:
+            j_type = random.choice(["unlock", "fetch", "sell"])
+            
+            if j_type == "unlock":
+                target = self.unlocked_count + random.randint(3, 7)
+                max_possible = len(self.active_items) + len(self.locked_items)
+                if target > max_possible:
+                    target = max_possible
+                
+                # Skip if they already unlocked everything
+                if self.unlocked_count >= target:
+                    continue
+                    
+                reward = (target - self.unlocked_count) * 50000
+                self.available_jobs.append({
+                    "id": random.randint(1000, 9999),
+                    "type": "unlock",
+                    "target": target,
+                    "reward": reward,
+                    "desc": f"Royal Decree: Have {target} total items unlocked. (Reward: ${reward:,})"
+                })
+                
+            elif j_type == "fetch":
+                pool = [i for i in self.active_items if i not in self.artifacts]
+                if not pool: continue
+                target_item = random.choice(pool)
+                qty = (random.randint(10, 50) * self.week) + 100
+                
+                # Reward is slightly above normal max market price
+                normal_max = 255 + (self.unlocked_count * 5)
+                unit_reward = normal_max + random.randint(50, 150)
+                reward = qty * unit_reward
+                
+                self.available_jobs.append({
+                    "id": random.randint(1000, 9999),
+                    "type": "fetch",
+                    "item": target_item,
+                    "qty": qty,
+                    "reward": reward,
+                    "desc": f"Fetch Quest: Deliver {qty:,} {target_item}. (Reward: ${reward:,})"
+                })
+                
+            elif j_type == "sell":
+                pool = [i for i in self.active_items if i not in self.artifacts]
+                if not pool: continue
+                target_item = random.choice(pool)
+                qty = (random.randint(5, 20) * self.week) + 50
+                
+                # Target price requires Black Swan or massive boom to achieve!
+                normal_max = 255 + (self.unlocked_count * 5)
+                target_price = normal_max + random.randint(10, 100) 
+                reward = random.randint(50000, 200000)
+                
+                self.available_jobs.append({
+                    "id": random.randint(1000, 9999),
+                    "type": "sell",
+                    "item": target_item,
+                    "target_price": target_price,
+                    "target_qty": qty,
+                    "progress": 0,
+                    "reward": reward,
+                    "desc": f"Market Maker: Sell {qty:,} {target_item} for >= ${target_price:,} each. (Bonus: ${reward:,})"
+                })
 
     def generate_market(self):
         self.current_events = []
@@ -463,7 +538,6 @@ class TradeTycoon:
     def parse_qty(self, user_input, max_qty):
         val = user_input.lower().strip()
         if val in ['a', 'all']: return max_qty
-        # --- NEW: Half quantity forces a round-up ---
         if val in ['h', 'half']: return (max_qty + 1) // 2
         if val in ['q', 'quarter']: return max_qty // 4
         try:
@@ -477,8 +551,11 @@ class TradeTycoon:
         save_data = {
             "run_id": self.run_id,
             "money": self.money,
-            "debt": self.debt, # --- NEW: Save Debt State ---
-            "loan_weeks": getattr(self, 'loan_weeks', 0), # --- NEW: Save Loan Tracker ---
+            "debt": getattr(self, 'debt', 0), 
+            "loan_weeks": getattr(self, 'loan_weeks', 0),
+            "completed_jobs": getattr(self, 'completed_jobs', 0), # --- NEW: Save Jobs ---
+            "active_jobs": getattr(self, 'active_jobs', []),
+            "available_jobs": getattr(self, 'available_jobs', []),
             "week": self.week,
             "unlock_cost": self.unlock_cost,
             "unlocked_count": self.unlocked_count,
@@ -509,8 +586,14 @@ class TradeTycoon:
             # 1. Load the base numerical variables
             self.run_id = save_data.get("run_id", random.randint(100000, 999999))
             self.money = save_data.get("money", self.money)
-            self.debt = save_data.get("debt", 0) # --- NEW: Load Debt State ---
-            self.loan_weeks = save_data.get("loan_weeks", 0) # --- NEW: Load Loan Tracker ---
+            self.debt = save_data.get("debt", 0) 
+            self.loan_weeks = save_data.get("loan_weeks", 0) 
+            
+            # --- NEW: Load Job States ---
+            self.completed_jobs = save_data.get("completed_jobs", 0)
+            self.active_jobs = save_data.get("active_jobs", [])
+            self.available_jobs = save_data.get("available_jobs", [])
+            
             self.week = save_data.get("week", self.week)
             self.unlock_cost = save_data.get("unlock_cost", self.unlock_cost)
             self.total_score = save_data.get("total_score", self.total_score)
@@ -589,8 +672,9 @@ class TradeTycoon:
                 elif event.startswith("GAME SAVED") or event.startswith("GAME LOADED"):
                     print(f"   {Colors.MAGENTA}( *** {event} *** ){Colors.RESET}")
                 elif event.startswith("DEBT:") or event.startswith("LOAN:"):
-                    # Give Moneylender events a warning color
                     print(f"   {Colors.RED}( *** {event} *** ){Colors.RESET}") 
+                elif event.startswith("JOB"):
+                    print(f"   {Colors.YELLOW}( !!! {event} !!! ){Colors.RESET}")
                 else:
                     print(f"   {Colors.YELLOW}( *** {event} *** ){Colors.RESET}")
 
@@ -644,7 +728,6 @@ class TradeTycoon:
             if item in self.market_prices:
                 m_price = self.market_prices[item]
                 
-                # --- NEW: Build the strings safely inside the market check ---
                 raw_mkt = f" --- [Market: ${m_price:,}]"
                 
                 if item in self.artifacts:
@@ -653,7 +736,6 @@ class TradeTycoon:
                         inv_color = Colors.MAGENTA
                         idx_color = Colors.MAGENTA
                     else:
-                        # Gray out unowned artifacts in the market
                         inv_color = Colors.GRAY
                         idx_color = Colors.GRAY 
                 else:
@@ -665,10 +747,8 @@ class TradeTycoon:
                         inv_color = Colors.GRAY
                         idx_color = Colors.RESET
                         
-                # Add the colors for printing
                 colored_mkt = f" {Colors.GRAY}---{Colors.RESET} {mkt_color}[Market: ${m_price:,}]{Colors.RESET}"
             else:
-                # --- NEW: If not in market, strings are completely blank! ---
                 raw_mkt = ""
                 colored_mkt = ""
 
@@ -677,27 +757,23 @@ class TradeTycoon:
                         inv_color = Colors.MAGENTA
                         idx_color = Colors.MAGENTA
                     else:
-                        # Gray out unowned artifacts completely
                         inv_color = Colors.GRAY
                         idx_color = Colors.GRAY 
                 else:
                     inv_color = Colors.GRAY
                     idx_color = Colors.GRAY
 
-            # Hide average cost for untradable artifacts
             if item in self.artifacts:
                 inv_details = f"({qty:,})"
             else:
                 inv_details = f"({qty:,} @ ${avg:,})"
 
-            # Calculate padding strictly on the raw text without ANSI color codes
             raw_inv_str = f"[{idx + 1:<2}] {item}: {inv_details}"
             visible_text = f"{raw_inv_str}{raw_mkt}"
             visible_len = len(visible_text)
 
             padding = " " * max(0, 95 - visible_len)
 
-            # Combine the final colored strings
             colored_inv_str = f"{idx_color}[{idx + 1:<2}]{Colors.RESET} {inv_color}{item}: {inv_details}{Colors.RESET}"
             return f"{colored_inv_str}{colored_mkt}{padding}"
 
@@ -738,7 +814,7 @@ class TradeTycoon:
             unlock_prompt = f"{Colors.MAGENTA}*** YOU WON! Everything Is Unlocked! [{Colors.YELLOW}P{Colors.MAGENTA}]restige? ***{Colors.RESET}"
 
         page_nav = f" || [{Colors.RED}←{Colors.RESET}] PREV/NEXT [{Colors.RED}→{Colors.RESET}] {Colors.RED}Prev/Next Page{Colors.RESET}" if self.total_pages > 1 else ""
-        print(f"\n  [{buy_color}B{Colors.RESET}]uy ({self.buys_remaining}) | [{sell_color}S{Colors.RESET}]ell ({self.sells_remaining}) | [{Colors.YELLOW}A{Colors.RESET}]rtifact | [{Colors.RED}M{Colors.RESET}]oneylender | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt}\n  USING ARTIFACTS AND UNLOCKING ITEMS WILL RESET BUY/SELL ACTIONS TO FULL                            (Page {self.current_page + 1} of {self.total_pages}){page_nav}")
+        print(f"\n  [{buy_color}B{Colors.RESET}]uy ({self.buys_remaining}) | [{sell_color}S{Colors.RESET}]ell ({self.sells_remaining}) | [{Colors.YELLOW}A{Colors.RESET}]rtifact | [{Colors.YELLOW}J{Colors.RESET}]obs | [{Colors.RED}M{Colors.RESET}]oneylender | Next [{Colors.YELLOW}W{Colors.RESET}]eek | {unlock_prompt}\n  USING ARTIFACTS AND UNLOCKING ITEMS WILL RESET BUY/SELL ACTIONS TO FULL                            (Page {self.current_page + 1} of {self.total_pages}){page_nav}")
 
         print("=" * 200)
         
@@ -751,7 +827,6 @@ class TradeTycoon:
             instant_keys = []
             
         while True:
-            # If we pass a custom menu, draw that instead of the standard dashboard
             if custom_renderer:
                 custom_renderer()
             else:
@@ -767,7 +842,6 @@ class TradeTycoon:
             elif key == 'backspace':
                 buffer = buffer[:-1]
             elif key == 'left':
-                # Disable main dashboard pagination if we are in a custom menu
                 if not custom_renderer and self.total_pages > 1:
                     if self.current_page > 0:
                         self.current_page -= 1
@@ -786,11 +860,9 @@ class TradeTycoon:
                 if not custom_renderer:
                     self.event_scroll = max(0, self.event_scroll - 1)
             elif len(key) == 1:
-                # --- NEW INSTANT KEY LOGIC ---
-                # If the key is an instant hotkey and the buffer is empty, trigger immediately!
                 if key.lower() in instant_keys and buffer == "":
-                    print(key) # Manually print the key so the user sees it
-                    print()    # Drop down to the next line
+                    print(key) 
+                    print()    
                     return key.lower()
                 
                 buffer += key
@@ -819,12 +891,11 @@ class TradeTycoon:
                         if self.current_page < self.total_pages - 1: self.current_page += 1
                         else: self.current_page = 0
                 print()
-                continue # Redraw the screen immediately
+                continue 
 
-            # Since action_raw wasn't a special key, convert to lower case logic
             action = action_raw.lower()
             print(action.upper())
-            self.event_scroll = 0 # Auto-snap to bottom on new action
+            self.event_scroll = 0 
 
             if action == 'b':
                 item_input = self.interactive_input(f"  To buy, enter item number, comma-seperated list of numbers, or autofill list with [E]asy Mode: ", instant_keys=['e']).strip().lower()
@@ -838,7 +909,6 @@ class TradeTycoon:
 
                     normal_max_price = 255 + (self.unlocked_count * 5)
 
-                    # --- NEW: Easy Buy treats $0 avg cost items like empty stacks to quickly establish a market baseline! ---
                     valid_indices = [
                         str(i + 1) for i, item in enumerate(self.display_items) 
                         if item not in self.artifacts 
@@ -868,7 +938,6 @@ class TradeTycoon:
                     continue
 
                 if len(indices) == 1:
-                    # --- SINGLE BUY LOGIC ---
                     item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
@@ -901,7 +970,6 @@ class TradeTycoon:
                                     current_avg = self.average_cost.get(item, 0)
                                     new_qty = current_qty + qty
 
-                                    # --- NEW: Safely establish the baseline average cost so math doesn't stay stuck at $0 ---
                                     if current_avg == 0:
                                         self.average_cost[item] = price
                                     else:
@@ -936,7 +1004,6 @@ class TradeTycoon:
                         time.sleep(1)
 
                 elif len(indices) > 1:
-                    # --- MULTI BUY LOGIC ---
                     if self.buys_remaining <= 0:
                         print("  You have exhausted your Buy actions for regular items this week!")
                         time.sleep(2)
@@ -981,7 +1048,6 @@ class TradeTycoon:
                                 current_avg = self.average_cost.get(item, 0)
                                 new_qty = current_qty + qty
                                 
-                                # --- NEW: Safely establish the baseline average cost so math doesn't stay stuck at $0 ---
                                 if current_avg == 0:
                                     self.average_cost[item] = price
                                 else:
@@ -1039,7 +1105,6 @@ class TradeTycoon:
 
                             artifact_prompt = f"\n  {Colors.MAGENTA}*** ARTIFACT SELECTED: {item} ***{Colors.RESET}\n  {power_desc}\n  Do you want to invoke this artifact? (Y/N): "
                             
-                            # Use interactive input so arrow keys still work!
                             confirm = self.interactive_input(artifact_prompt, instant_keys=['y', 'n']).strip().lower()
                             
                             if confirm == 'y':
@@ -1213,7 +1278,6 @@ class TradeTycoon:
                                                                 print("You cannot convert an item into itself!")
                                                                 time.sleep(1)
                                                             else:
-                                                                # --- NEW: Capture average costs before deductions! ---
                                                                 source_avg = self.average_cost.get(source_item, 0)
                                                                 target_avg = self.average_cost.get(target_item, 0)
 
@@ -1232,7 +1296,6 @@ class TradeTycoon:
                                                                 current_target_qty = self.inventory.get(target_item, 0)
                                                                 new_target_qty = current_target_qty + qty
                                                                 
-                                                                # --- NEW: Safely carry over the true value of the items ---
                                                                 if target_avg == 0:
                                                                     self.average_cost[target_item] = source_avg
                                                                 else:
@@ -1272,13 +1335,11 @@ class TradeTycoon:
                                         effect = random.randint(1, 4)
 
                                         if effect == 1:
-                                            # 1. Double a random owned item
                                             owned_items = [i for i, q in self.inventory.items() if q > 0]
                                             if owned_items:
                                                 target = random.choice(owned_items)
                                                 qty = self.inventory[target]
                                                 
-                                                # Halve average cost since the new items are free
                                                 self.average_cost[target] = self.average_cost[target] // 2 
                                                 self.inventory[target] += qty
                                                 self.current_events.append(f"ARTIFACT INVOKED: Fairy Bug Net - A fairy doubled your {target} ({qty:,} -> {self.inventory[target]:,})!")
@@ -1286,7 +1347,6 @@ class TradeTycoon:
                                                 self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - You own nothing to double! The fairy laughs and escapes.")
 
                                         elif effect == 2:
-                                            # 2. Unlock 10-15 items and grant 10,000 of each
                                             unlock_amount = random.randint(10, 15)
                                             actual_unlocks = min(unlock_amount, len(self.locked_items))
                                             
@@ -1317,7 +1377,6 @@ class TradeTycoon:
                                                 self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy tried to unlock new items, but you've already unlocked everything!")
 
                                         elif effect == 3:
-                                            # 3. Force a Grand Market including all owned locked items
                                             all_to_market = set(self.active_items)
                                             for inv_item, q in self.inventory.items():
                                                 if q > 0 and inv_item not in self.artifacts:
@@ -1325,7 +1384,6 @@ class TradeTycoon:
                                             
                                             self.current_market = []
                                             
-                                            # Generate new hashes to calculate prices
                                             total_artifacts = sum(self.inventory.get(art, 0) for art in self.artifacts)
                                             seed_string = f"run_{self.run_id}_money_{self.money}_score_{self.total_score}_unlocked_{self.unlocked_count}_arts_{total_artifacts}_week_{self.week}_fairy"
                                             seed_string_two = f"run_{self.run_id}_week_{self.week}_score_{self.total_score}_unlocked_{self.unlocked_count}_money_{self.money}_fairy"
@@ -1347,7 +1405,6 @@ class TradeTycoon:
                                             self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - The fairy invites you to a Fairy Market where everything you own is tradable!")
 
                                         elif effect == 4:
-                                            # 4. Summon all other artifacts to the market
                                             other_arts = ["Black Swan Catalyst", "Political Favors", "Smuggler's Writ", "Owl-Chemist"]
                                             for art in other_arts:
                                                 if art not in self.current_market:
@@ -1358,7 +1415,6 @@ class TradeTycoon:
                                             self.sync_artifact_prices()
                                             self.current_events.append("ARTIFACT INVOKED: Fairy Bug Net - A fairy summoned the other 4 legendary artifacts to the market!")
 
-                                        # Reset actions
                                         self.buys_remaining = 1
                                         self.sells_remaining = 1
                             else:
@@ -1379,7 +1435,6 @@ class TradeTycoon:
                 if not item_input: continue
 
                 if item_input == 'e':
-                    # --- NEW: Easy Sell holds $0 items until they reach 50% of the max market value! ---
                     normal_max_price = 255 + (self.unlocked_count * 5)
                     good_sell_price = normal_max_price // 2
 
@@ -1413,7 +1468,6 @@ class TradeTycoon:
                     continue
 
                 if len(indices) == 1:
-                    # --- SINGLE SELL LOGIC ---
                     item_idx = indices[0]
                     if 0 <= item_idx < len(self.display_items):
                         item = self.display_items[item_idx]
@@ -1423,7 +1477,6 @@ class TradeTycoon:
                             time.sleep(1)
                             continue
 
-                        # Not an artifact, verify standard sell actions
                         if self.sells_remaining <= 0:
                             print("  You have exhausted your Sell actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
                             time.sleep(2)
@@ -1452,6 +1505,15 @@ class TradeTycoon:
 
                                     self.sells_remaining -= 1
                                     self.current_events.append(f"SOLD: {qty:,} {item} for ${revenue:,}")
+                                    
+                                    # --- NEW: Job Tracker for 'Sell' Contracts ---
+                                    if hasattr(self, 'active_jobs'):
+                                        for job in self.active_jobs:
+                                            if job['type'] == 'sell' and job['item'] == item and price >= job['target_price']:
+                                                job['progress'] += qty
+                                                if job['progress'] >= job['target_qty'] and job['progress'] - qty < job['target_qty']:
+                                                    self.current_events.append(f"JOB READY: Market Maker contract for {item} is ready to Turn In!")
+                                                    
                                 else:
                                     print(f"  Invalid quantity or you don't have that many {item}!")
                                     time.sleep(1)
@@ -1463,7 +1525,6 @@ class TradeTycoon:
                         time.sleep(1)
 
                 elif len(indices) > 1:
-                    # --- MULTI SELL LOGIC ---
                     if self.sells_remaining <= 0:
                         print("  You have exhausted your Sell actions for this week! Advance to the next week, or use an Artifact/Unlock to gain more.")
                         time.sleep(2)
@@ -1517,6 +1578,14 @@ class TradeTycoon:
                                 total_value += revenue
                                 trade_details.append(f"{qty:,} {item} for ${revenue:,}")
                                 
+                                # --- NEW: Job Tracker for 'Sell' Contracts ---
+                                if hasattr(self, 'active_jobs'):
+                                    for job in self.active_jobs:
+                                        if job['type'] == 'sell' and job['item'] == item and price >= job['target_price']:
+                                            job['progress'] += qty
+                                            if job['progress'] >= job['target_qty'] and job['progress'] - qty < job['target_qty']:
+                                                self.current_events.append(f"JOB READY: Market Maker contract for {item} is ready to Turn In!")
+                                
                     if total_trades > 0:
                         self.sells_remaining -= 1
                         self.current_events.append(f"MULTI-SELL: Mass sale complete! Total Revenue: ${total_value:,}")
@@ -1526,24 +1595,123 @@ class TradeTycoon:
                         print("  You do not have enough inventory of those items to sell.")
                         time.sleep(1)
 
-            elif action == 'm':
-                self.clear_screen()
-                print("=" * 200)
-                print(f"   {Colors.RED}*** THE MONEYLENDER ***{Colors.RESET}")
-                print("=" * 200)
-                print(f"  Current Money: ${self.money:,}")
-                print(f"  Current Debt:  ${self.debt:,}")
+            elif action == 'j':
+                # --- NEW: THE JOB BOARD LOGIC ---
+                # Safety initialization for old save files
+                if not hasattr(self, 'completed_jobs'): self.completed_jobs = 0
+                if not hasattr(self, 'active_jobs'): self.active_jobs = []
+                if not hasattr(self, 'available_jobs'): self.available_jobs = []
                 
-                upcoming_rate = getattr(self, 'loan_weeks', 0) + 1 if self.debt > 0 else 1
-                print(f"  Next Interest Rate: {upcoming_rate}% (Increases by +1% every week the loan is active!)")
-                print("=" * 200)
+                if len(self.available_jobs) < 10:
+                    self.generate_jobs()
+
+                def render_job_board():
+                    self.clear_screen()
+                    print("=" * 200)
+                    print(f"   {Colors.YELLOW}*** THE GUILD JOB BOARD ***{Colors.RESET}")
+                    print("=" * 200)
+                    
+                    mult = 1.01 ** self.completed_jobs
+                    slots = min(len(self.artifacts), 1 + (self.completed_jobs // 10))
+                    print(f"  Jobs Completed: {self.completed_jobs}  (Heirloom Slots: {slots}) | Current Prestige Multiplier: {mult:.2f}x")
+                    print("=" * 200)
+                    
+                    print(f"\n  {Colors.GREEN}--- ACTIVE CONTRACTS (Max 3) ---{Colors.RESET}")
+                    if not self.active_jobs:
+                        print("  (Empty)")
+                    else:
+                        for idx, job in enumerate(self.active_jobs):
+                            if job['type'] == 'unlock':
+                                status = f"Progress: {self.unlocked_count}/{job['target']}"
+                            elif job['type'] == 'sell':
+                                status = f"Progress: {job['progress']}/{job['target_qty']}"
+                            elif job['type'] == 'fetch':
+                                held = self.inventory.get(job['item'], 0)
+                                status = f"Inventory: {held:,}/{job['qty']:,}"
+                            print(f"  [{idx + 1}] {job['desc']} | {status}")
+                    
+                    print(f"\n  {Colors.YELLOW}--- AVAILABLE CONTRACTS ---{Colors.RESET}")
+                    for idx, job in enumerate(self.available_jobs):
+                        print(f"  [{len(self.active_jobs) + idx + 1}] {job['desc']}")
+                        
+                    print("\n" + "=" * 200)
+                    
+                j_action = self.interactive_input("  Enter a number to Accept/Turn In (or [Q] to return): ", custom_renderer=render_job_board).strip().lower()
+                
+                if j_action == 'q' or not j_action:
+                    continue
+                    
+                try:
+                    j_idx = int(j_action) - 1
+                    
+                    # 1. Player clicked an ACTIVE job to turn it in
+                    if j_idx < len(self.active_jobs):
+                        job = self.active_jobs[j_idx]
+                        completed = False
+                        
+                        if job['type'] == 'unlock' and self.unlocked_count >= job['target']:
+                            completed = True
+                        elif job['type'] == 'sell' and job['progress'] >= job['target_qty']:
+                            completed = True
+                        elif job['type'] == 'fetch':
+                            if self.inventory.get(job['item'], 0) >= job['qty']:
+                                self.inventory[job['item']] -= job['qty']
+                                if self.inventory[job['item']] == 0:
+                                    self.average_cost[job['item']] = 0
+                                completed = True
+                            else:
+                                print(f"  You do not have enough {job['item']} to turn in this quest!")
+                                time.sleep(2)
+                                
+                        if completed:
+                            self.money += job['reward']
+                            self.completed_jobs += 1
+                            self.current_events.append(f"JOB COMPLETE! You earned ${job['reward']:,} and +1 Prestige Job Point!")
+                            self.active_jobs.pop(j_idx)
+                            self.generate_jobs() # Replenish the board
+                        else:
+                            print("  Job parameters not yet met.")
+                            time.sleep(1)
+                            
+                    # 2. Player clicked an AVAILABLE job to accept it
+                    elif j_idx < len(self.active_jobs) + len(self.available_jobs):
+                        if len(self.active_jobs) >= 3:
+                            print("  You can only have 3 active contracts at a time!")
+                            time.sleep(2)
+                        else:
+                            avail_idx = j_idx - len(self.active_jobs)
+                            new_job = self.available_jobs.pop(avail_idx)
+                            self.active_jobs.append(new_job)
+                            print("  Contract Accepted!")
+                            self.generate_jobs() # Replenish the board
+                            time.sleep(1)
+                    else:
+                        print("  Invalid selection.")
+                        time.sleep(1)
+                except ValueError:
+                    pass
+
+            elif action == 'm':
+                def render_moneylender():
+                    self.clear_screen()
+                    print("=" * 200)
+                    print(f"   {Colors.RED}*** THE MONEYLENDER ***{Colors.RESET}")
+                    print("=" * 200)
+                    print(f"  Current Money: ${self.money:,}")
+                    print(f"  Current Debt:  ${self.debt:,}")
+                    
+                    upcoming_rate = getattr(self, 'loan_weeks', 0) + 1 if self.debt > 0 else 1
+                    print(f"  Next Interest Rate: {upcoming_rate}% (Increases by +1% every week the loan is active!)")
+                    print("=" * 200)
+
+                render_moneylender()
                 print("  Would you like to [B]orrow or [R]epay? (Press any other key to cancel): ", end="", flush=True)
                 
                 m_action = self.get_keypress().lower()
                 print(m_action.upper())
 
                 if m_action == 'b':
-                    amt_str = self.interactive_input("  How much would you like to borrow? ")
+                    amt_str = self.interactive_input("  How much would you like to borrow? ", custom_renderer=render_moneylender)
                     try:
                         amt = int(amt_str)
                         if amt > 0:
@@ -1564,7 +1732,7 @@ class TradeTycoon:
                         print("  You have no money to repay your debt.")
                         time.sleep(1)
                     else:
-                        amt_str = self.interactive_input(f"  How much would you like to repay? (Max: {min(self.money, self.debt):,}, [A]ll/[H]alf/[Q]uarter): ")
+                        amt_str = self.interactive_input(f"  How much would you like to repay? (Max: {min(self.money, self.debt):,}, [A]ll/[H]alf/[Q]uarter): ", custom_renderer=render_moneylender)
                         repay_amt = self.parse_qty(amt_str, min(self.money, self.debt))
                         
                         if 0 < repay_amt <= self.money and repay_amt <= self.debt:
@@ -1602,6 +1770,10 @@ class TradeTycoon:
 
                 self.generate_market()
                 self.trigger_event()
+                
+                # Check if we need to spawn new jobs for the week
+                if hasattr(self, 'available_jobs') and len(self.available_jobs) < 10:
+                    self.generate_jobs()
 
             elif action == 'u':
                 if self.locked_items:
@@ -1669,6 +1841,12 @@ class TradeTycoon:
                     if unlocked_any:
                         self.current_events.append(f"ACTIONS RESTORED: Mass unlock ({paid_with}) complete! Buy/Sell actions reset to 1.")
 
+                        # --- NEW: Job Tracker for 'Unlock' Contracts ---
+                        if hasattr(self, 'active_jobs'):
+                            for job in self.active_jobs:
+                                if job['type'] == 'unlock' and self.unlocked_count >= job['target']:
+                                    self.current_events.append("JOB READY: A Royal Decree contract is ready to Turn In!")
+
                 else:
                     print("  You have already unlocked all the realm's items!")
                     time.sleep(2)
@@ -1699,12 +1877,17 @@ class TradeTycoon:
                     print(f"   {Colors.MAGENTA}*** PRESTIGE ***{Colors.RESET}")
                     print("=" * 200)
 
-                    bonus_gp = int(self.total_score ** (1/5.0)) * self.week
+                    # --- UPDATED: Dynamic Math for Prestige ---
+                    mult = 1.01 ** getattr(self, 'completed_jobs', 0)
+                    bonus_gp = int((self.total_score ** (1/5.0)) * self.week * mult)
+                    
+                    allowed_slots = 1 + (getattr(self, 'completed_jobs', 0) // 10)
+                    allowed_slots = min(allowed_slots, len(self.artifacts))
 
                     print(f"  You have cornered the market and unlocked every good in the realm!")
                     print(f"  If you Prestige, your empire will reset, but you will retain the following perks:")
-                    print(f"  - {Colors.YELLOW}Extra Starting Wealth:{Colors.RESET} +${bonus_gp:,} (Bonus from getting a high score of {self.total_score:,})")
-                    print(f"  - {Colors.MAGENTA}Legendary Heirloom:{Colors.RESET} Keep your entire collected stack of 1 Artifact type (minimum 1)")
+                    print(f"  - {Colors.YELLOW}Extra Starting Wealth:{Colors.RESET} +${bonus_gp:,} (Includes a {mult:.2f}x multiplier from {getattr(self, 'completed_jobs', 0)} Jobs!)")
+                    print(f"  - {Colors.MAGENTA}Legendary Heirloom(s):{Colors.RESET} Keep your entire collected stack of {allowed_slots} Artifact type(s)")
                     print("\n  Are you ready to pass the torch to the next generation?")
 
                     confirm = input("\n  (Y/N): ").strip().lower()
@@ -1712,37 +1895,46 @@ class TradeTycoon:
                         owned_artifacts = [art for art in self.artifacts if self.inventory.get(art, 0) > 0]
 
                         if owned_artifacts:
-                            print("\n  Which artifact would you like to keep?")
+                            print(f"\n  Which artifact(s) would you like to keep? You have {allowed_slots} slot(s) available.")
                             for idx, art in enumerate(owned_artifacts):
                                 qty = self.inventory[art]
                                 print(f" [{idx + 1}] {art} (Owned: {qty:,})")
 
                             try:
-                                art_choice = int(input(f" Enter number (1-{len(owned_artifacts)}): ")) - 1
-                                if 0 <= art_choice < len(owned_artifacts):
-                                    chosen_art = owned_artifacts[art_choice]
-                                else:
-                                    chosen_art = owned_artifacts[0]
-                                    print(f"  Invalid selection. The Guild securely packs your {chosen_art} as your heirloom.")
-                                    time.sleep(1)
+                                prompt_text = f" Enter up to {allowed_slots} number(s), separated by commas: " if allowed_slots > 1 else " Enter number (1): "
+                                art_choices = input(prompt_text).strip()
+                                indices = [int(x.strip()) - 1 for x in art_choices.split(',') if x.strip().isdigit()]
+                                
+                                # Cap it securely at their max allowed slots
+                                indices = indices[:allowed_slots]
+                                
+                                chosen_arts = []
+                                kept_qtys = []
+                                for i in indices:
+                                    if 0 <= i < len(owned_artifacts) and owned_artifacts[i] not in chosen_arts:
+                                        chosen_arts.append(owned_artifacts[i])
+                                        kept_qtys.append(self.inventory[owned_artifacts[i]])
+                                        
+                                if not chosen_arts:
+                                    raise ValueError("No valid selection")
                             except ValueError:
-                                chosen_art = owned_artifacts[0]
-                                print(f"  Invalid input. The Guild securely packs your {chosen_art} as your heirloom.")
-                                time.sleep(1)
-
-                            kept_qty = self.inventory[chosen_art]
+                                chosen_arts = [owned_artifacts[0]]
+                                kept_qtys = [self.inventory[owned_artifacts[0]]]
+                                print(f"  Invalid input. The Guild securely packs your {chosen_arts[0]} as your heirloom.")
+                                time.sleep(2)
                         else:
                             print("\n  You possess no legendary artifacts to pass down to the next generation.")
-                            time.sleep(1)
-                            chosen_art = None
-                            kept_qty = 0
+                            time.sleep(2)
+                            chosen_arts = []
+                            kept_qtys = []
 
-                        self.reset_game_state(bonus_gp=bonus_gp, kept_artifact=chosen_art, kept_qty=kept_qty)
+                        self.reset_game_state(bonus_gp=bonus_gp, kept_artifacts=chosen_arts, kept_qtys=kept_qtys)
 
                         self.generate_market()
                         
-                        if chosen_art:
-                            self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,} and {kept_qty:,}x {chosen_art}."]
+                        if chosen_arts:
+                            art_strings = [f"{q:,}x {a}" for a, q in zip(chosen_arts, kept_qtys)]
+                            self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,} and {', '.join(art_strings)}."]
                         else:
                             self.current_events = [f"PRESTIGE SECURED! You start anew with an extra ${bonus_gp:,}."]
 
