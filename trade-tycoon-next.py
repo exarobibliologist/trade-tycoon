@@ -178,7 +178,10 @@ class TradeTycoon:
         if not hasattr(self, 'available_jobs'): self.available_jobs = []
         
         while len(self.available_jobs) < 20:
-            j_type = random.choice(["unlock", "fetch", "sell"])
+            # We use random.choices (plural) to assign weights. 
+            # k=1 returns a list of 1 item, so we grab [0] at the end.
+            # Weights: 5% Unlock, 50% Fetch, 45% Sell
+            j_type = random.choices(["unlock", "fetch", "sell"], weights=[5, 50, 45], k=1)[0]
             
             if j_type == "unlock":
                 target = self.unlocked_count + random.randint(3, 7)
@@ -196,14 +199,26 @@ class TradeTycoon:
                     "type": "unlock",
                     "target": target,
                     "reward": reward,
-                    "desc": f"Royal Decree: Have {target} total items unlocked. (Reward: ${reward:,})"
+                    "desc": f"{Colors.RED}Royal Decree:{Colors.RESET} Have {target} total items unlocked. (Reward: ${reward:,})"
                 })
                 
             elif j_type == "fetch":
                 pool = [i for i in self.active_items if i not in self.artifacts]
                 if not pool: continue
                 target_item = random.choice(pool)
-                qty = (random.randint(10, 50) * self.week) + 100
+                
+                # --- NEW: Get current stock and scale 0.5x to 1.5x ---
+                current_stock = self.inventory.get(target_item, 0)
+                
+                # If you have enough stock, scale the quest to your current inventory
+                if current_stock >= 20: 
+                    min_qty = int(current_stock * 0.5)
+                    max_qty = int(current_stock * 1.5)
+                    qty = random.randint(min_qty, max_qty)
+                else:
+                    # SAFETY FALLBACK: If your stock is empty, use the standard baseline
+                    # so the quest doesn't break by asking for 0 items.
+                    qty = (random.randint(10, 50) * self.week) + 100
                 
                 # Reward is slightly above normal max market price
                 normal_max = 255 + (self.unlocked_count * 5)
@@ -216,7 +231,7 @@ class TradeTycoon:
                     "item": target_item,
                     "qty": qty,
                     "reward": reward,
-                    "desc": f"Fetch Quest: Deliver {qty:,} {target_item}. (Reward: ${reward:,})"
+                    "desc": f"{Colors.GREEN}Fetch Quest:{Colors.RESET} Deliver {qty:,} {target_item}. (Reward: ${reward:,})"
                 })
                 
             elif j_type == "sell":
@@ -238,7 +253,7 @@ class TradeTycoon:
                     "target_qty": qty,
                     "progress": 0,
                     "reward": reward,
-                    "desc": f"Market Maker: Sell {qty:,} {target_item} for >= ${target_price:,} each. (Bonus: ${reward:,})"
+                    "desc": f"{Colors.YELLOW}Market Maker:{Colors.RESET} Sell {qty:,} {target_item} for >= ${target_price:,} each. (Bonus: ${reward:,})"
                 })
 
     def generate_market(self):
@@ -1608,15 +1623,17 @@ class TradeTycoon:
                     def render_job_board():
                         self.clear_screen()
                         print("=" * 200)
-                        print(f"   {Colors.YELLOW}*** THE GUILD JOB BOARD ***{Colors.RESET}")
+                        print(f"   {Colors.MAGENTA}*** THE GUILD JOB BOARD ***{Colors.RESET}")
+                        print(f"   {Colors.YELLOW}*** Unlock Special Prestige Rewards with Every Job ***{Colors.RESET}")                        
                         print("=" * 200)
                         
-                        mult = 1.01 ** self.completed_jobs
-                        slots = min(len(self.artifacts), 1 + (self.completed_jobs // 10))
-                        print(f"  Jobs Completed: {self.completed_jobs}  (Heirloom Slots: {slots}) | Current Prestige Multiplier: {mult:.2f}x")
+                        mult = 1.02 ** self.completed_jobs
+                        slots = min(len(self.artifacts), 1 + (self.completed_jobs // 20))
+                        print(f"  {Colors.MAGENTA}Prestige Artifact Slots: {Colors.RESET}{slots}{Colors.MAGENTA} | Current Prestige Multiplier: {Colors.RESET}{mult:.2f}x")
                         print("=" * 200)
                         
-                        print(f"\n  {Colors.GREEN}--- ACTIVE CONTRACTS (Max 3) ---{Colors.RESET}")
+                        print(f"\n  --- {Colors.RED}{self.completed_jobs}{Colors.RESET} JOBS COMPLETE ---")
+                        print(f"  --- {Colors.MAGENTA}ACTIVE CONTRACTS (Max 3){Colors.RESET} ---")
                         if not self.active_jobs:
                             print("  (Empty)")
                         else:
