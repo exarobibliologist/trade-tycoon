@@ -177,7 +177,7 @@ class TradeTycoon:
         """ --- NEW: Dynamic Quest Generator --- """
         if not hasattr(self, 'available_jobs'): self.available_jobs = []
         
-        while len(self.available_jobs) < 10:
+        while len(self.available_jobs) < 20:
             j_type = random.choice(["unlock", "fetch", "sell"])
             
             if j_type == "unlock":
@@ -555,7 +555,6 @@ class TradeTycoon:
             "loan_weeks": getattr(self, 'loan_weeks', 0),
             "completed_jobs": getattr(self, 'completed_jobs', 0), # --- NEW: Save Jobs ---
             "active_jobs": getattr(self, 'active_jobs', []),
-            "available_jobs": getattr(self, 'available_jobs', []),
             "week": self.week,
             "unlock_cost": self.unlock_cost,
             "unlocked_count": self.unlocked_count,
@@ -592,7 +591,7 @@ class TradeTycoon:
             # --- NEW: Load Job States ---
             self.completed_jobs = save_data.get("completed_jobs", 0)
             self.active_jobs = save_data.get("active_jobs", [])
-            self.available_jobs = save_data.get("available_jobs", [])
+            self.available_jobs = [] # <-- CHANGED: Force an empty list so the board re-rolls!
             
             self.week = save_data.get("week", self.week)
             self.unlock_cost = save_data.get("unlock_cost", self.unlock_cost)
@@ -1596,100 +1595,117 @@ class TradeTycoon:
                         time.sleep(1)
 
             elif action == 'j':
-                # --- NEW: THE JOB BOARD LOGIC ---
                 # Safety initialization for old save files
                 if not hasattr(self, 'completed_jobs'): self.completed_jobs = 0
                 if not hasattr(self, 'active_jobs'): self.active_jobs = []
                 if not hasattr(self, 'available_jobs'): self.available_jobs = []
                 
-                if len(self.available_jobs) < 10:
+                if len(self.available_jobs) < 20:
                     self.generate_jobs()
 
-                def render_job_board():
-                    self.clear_screen()
-                    print("=" * 200)
-                    print(f"   {Colors.YELLOW}*** THE GUILD JOB BOARD ***{Colors.RESET}")
-                    print("=" * 200)
-                    
-                    mult = 1.01 ** self.completed_jobs
-                    slots = min(len(self.artifacts), 1 + (self.completed_jobs // 10))
-                    print(f"  Jobs Completed: {self.completed_jobs}  (Heirloom Slots: {slots}) | Current Prestige Multiplier: {mult:.2f}x")
-                    print("=" * 200)
-                    
-                    print(f"\n  {Colors.GREEN}--- ACTIVE CONTRACTS (Max 3) ---{Colors.RESET}")
-                    if not self.active_jobs:
-                        print("  (Empty)")
-                    else:
-                        for idx, job in enumerate(self.active_jobs):
-                            if job['type'] == 'unlock':
-                                status = f"Progress: {self.unlocked_count}/{job['target']}"
-                            elif job['type'] == 'sell':
-                                status = f"Progress: {job['progress']}/{job['target_qty']}"
-                            elif job['type'] == 'fetch':
-                                held = self.inventory.get(job['item'], 0)
-                                status = f"Inventory: {held:,}/{job['qty']:,}"
-                            print(f"  [{idx + 1}] {job['desc']} | {status}")
-                    
-                    print(f"\n  {Colors.YELLOW}--- AVAILABLE CONTRACTS ---{Colors.RESET}")
-                    for idx, job in enumerate(self.available_jobs):
-                        print(f"  [{len(self.active_jobs) + idx + 1}] {job['desc']}")
+                # --- NEW: Keep the window open until the player presses 'Q' ---
+                while True: 
+                    def render_job_board():
+                        self.clear_screen()
+                        print("=" * 200)
+                        print(f"   {Colors.YELLOW}*** THE GUILD JOB BOARD ***{Colors.RESET}")
+                        print("=" * 200)
                         
-                    print("\n" + "=" * 200)
-                    
-                j_action = self.interactive_input("  Enter a number to Accept/Turn In (or [Q] to return): ", custom_renderer=render_job_board).strip().lower()
-                
-                if j_action == 'q' or not j_action:
-                    continue
-                    
-                try:
-                    j_idx = int(j_action) - 1
-                    
-                    # 1. Player clicked an ACTIVE job to turn it in
-                    if j_idx < len(self.active_jobs):
-                        job = self.active_jobs[j_idx]
-                        completed = False
+                        mult = 1.01 ** self.completed_jobs
+                        slots = min(len(self.artifacts), 1 + (self.completed_jobs // 10))
+                        print(f"  Jobs Completed: {self.completed_jobs}  (Heirloom Slots: {slots}) | Current Prestige Multiplier: {mult:.2f}x")
+                        print("=" * 200)
                         
-                        if job['type'] == 'unlock' and self.unlocked_count >= job['target']:
-                            completed = True
-                        elif job['type'] == 'sell' and job['progress'] >= job['target_qty']:
-                            completed = True
-                        elif job['type'] == 'fetch':
-                            if self.inventory.get(job['item'], 0) >= job['qty']:
-                                self.inventory[job['item']] -= job['qty']
-                                if self.inventory[job['item']] == 0:
-                                    self.average_cost[job['item']] = 0
-                                completed = True
-                            else:
-                                print(f"  You do not have enough {job['item']} to turn in this quest!")
-                                time.sleep(2)
-                                
-                        if completed:
-                            self.money += job['reward']
-                            self.completed_jobs += 1
-                            self.current_events.append(f"JOB COMPLETE! You earned ${job['reward']:,} and +1 Prestige Job Point!")
-                            self.active_jobs.pop(j_idx)
-                            self.generate_jobs() # Replenish the board
+                        print(f"\n  {Colors.GREEN}--- ACTIVE CONTRACTS (Max 3) ---{Colors.RESET}")
+                        if not self.active_jobs:
+                            print("  (Empty)")
                         else:
-                            print("  Job parameters not yet met.")
-                            time.sleep(1)
+                            for idx, job in enumerate(self.active_jobs):
+                                if job['type'] == 'unlock':
+                                    status = f"Progress: {self.unlocked_count}/{job['target']}"
+                                elif job['type'] == 'sell':
+                                    status = f"Progress: {job['progress']}/{job['target_qty']}"
+                                elif job['type'] == 'fetch':
+                                    held = self.inventory.get(job['item'], 0)
+                                    status = f"Inventory: {held:,}/{job['qty']:,}"
+                                print(f"  [{idx + 1}] {job['desc']} | {status}")
+                        
+                        print(f"\n  {Colors.YELLOW}--- AVAILABLE CONTRACTS ---{Colors.RESET}")
+                        for idx, job in enumerate(self.available_jobs):
+                            print(f"  [{len(self.active_jobs) + idx + 1}] {job['desc']}")
                             
-                    # 2. Player clicked an AVAILABLE job to accept it
-                    elif j_idx < len(self.active_jobs) + len(self.available_jobs):
-                        if len(self.active_jobs) >= 3:
-                            print("  You can only have 3 active contracts at a time!")
-                            time.sleep(2)
-                        else:
-                            avail_idx = j_idx - len(self.active_jobs)
-                            new_job = self.available_jobs.pop(avail_idx)
-                            self.active_jobs.append(new_job)
-                            print("  Contract Accepted!")
-                            self.generate_jobs() # Replenish the board
+                        print("\n" + "=" * 200)
+                        
+                    # --- NEW: Added [R]eroll option to the prompt ---
+                    j_action = self.interactive_input("  Enter a number to Accept/Turn In, [R]eroll (Cost: 1 Completed Job), or [Q] to return: ", custom_renderer=render_job_board).strip().lower()
+                    
+                    if j_action == 'q' or not j_action:
+                        break # Break the loop to return to the main dashboard
+                        
+                    # --- NEW: Handle the Reroll action ---
+                    if j_action == 'r':
+                        if self.completed_jobs >= 1:
+                            self.completed_jobs -= 1
+                            self.available_jobs = []
+                            self.generate_jobs()
+                            print("  Available jobs rerolled!")
                             time.sleep(1)
-                    else:
-                        print("  Invalid selection.")
-                        time.sleep(1)
-                except ValueError:
-                    pass
+                        else:
+                            print("  You need at least 1 completed job to reroll!")
+                            time.sleep(1)
+                        continue
+                        
+                    try:
+                        j_idx = int(j_action) - 1
+                        
+                        # 1. Player clicked an ACTIVE job to turn it in
+                        if j_idx < len(self.active_jobs):
+                            job = self.active_jobs[j_idx]
+                            completed = False
+                            
+                            if job['type'] == 'unlock' and self.unlocked_count >= job['target']:
+                                completed = True
+                            elif job['type'] == 'sell' and job['progress'] >= job['target_qty']:
+                                completed = True
+                            elif job['type'] == 'fetch':
+                                if self.inventory.get(job['item'], 0) >= job['qty']:
+                                    self.inventory[job['item']] -= job['qty']
+                                    if self.inventory[job['item']] == 0:
+                                        self.average_cost[job['item']] = 0
+                                    completed = True
+                                else:
+                                    print(f"  You do not have enough {job['item']} to turn in this quest!")
+                                    time.sleep(2)
+                                    
+                            if completed:
+                                self.money += job['reward']
+                                self.completed_jobs += 1
+                                self.current_events.append(f"JOB COMPLETE! You earned ${job['reward']:,} and +1 Prestige Job Point!")
+                                self.active_jobs.pop(j_idx)
+                                # Success message directly on the board
+                                print(f"  Job Complete! Earned ${job['reward']:,}")
+                                time.sleep(1)
+                            else:
+                                print("  Job parameters not yet met.")
+                                time.sleep(1)
+                                
+                        # 2. Player clicked an AVAILABLE job to accept it
+                        elif j_idx < len(self.active_jobs) + len(self.available_jobs):
+                            if len(self.active_jobs) >= 3:
+                                print("  You can only have 3 active contracts at a time!")
+                                time.sleep(2)
+                            else:
+                                avail_idx = j_idx - len(self.active_jobs)
+                                new_job = self.available_jobs.pop(avail_idx)
+                                self.active_jobs.append(new_job)
+                                print("  Contract Accepted!")
+                                self.generate_jobs() # Replenish the board
+                                time.sleep(1)
+                        else:
+                            print("  Invalid selection.")
+                            time.sleep(1)
+                    except ValueError:
+                        pass
 
             elif action == 'm':
                 def render_moneylender():
@@ -1771,9 +1787,10 @@ class TradeTycoon:
                 self.generate_market()
                 self.trigger_event()
                 
-                # Check if we need to spawn new jobs for the week
-                if hasattr(self, 'available_jobs') and len(self.available_jobs) < 10:
-                    self.generate_jobs()
+                # --- NEW: Reroll available jobs every new week ---
+                if hasattr(self, 'available_jobs'):
+                    self.available_jobs = [] # Clear the old jobs so it's forced to generate new ones
+                self.generate_jobs()
 
             elif action == 'u':
                 if self.locked_items:
