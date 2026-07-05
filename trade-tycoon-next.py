@@ -173,6 +173,14 @@ class TradeTycoon:
             market_type = "GRAND MARKET" if is_grand_market else "MARKET"
             self.current_events.append(f"A LEGENDARY ARTIFACT HAS APPEARED IN THE {market_type}: {spawned_artifact}")
 
+    def get_prestige_perks(self):
+        """ Single source of truth for Prestige math """
+        jobs = getattr(self, 'completed_jobs', 0)
+        mult = 1.02 ** jobs
+        slots = min(len(self.artifacts), 1 + (jobs // 20)) 
+        
+        return mult, slots
+        
     def generate_jobs(self):
         """ --- NEW: Dynamic Quest Generator --- """
         if not hasattr(self, 'available_jobs'): self.available_jobs = []
@@ -1627,8 +1635,9 @@ class TradeTycoon:
                         print(f"   {Colors.YELLOW}*** Unlock Special Prestige Rewards with Every Job ***{Colors.RESET}")                        
                         print("=" * 200)
                         
-                        mult = 1.02 ** self.completed_jobs
-                        slots = min(len(self.artifacts), 1 + (self.completed_jobs // 20))
+                        # --- NEW: Call the helper method to get the synced stats ---
+                        mult, slots = self.get_prestige_perks()
+                        
                         print(f"  {Colors.MAGENTA}Prestige Artifact Slots: {Colors.RESET}{slots}{Colors.MAGENTA} | Current Prestige Multiplier: {Colors.RESET}{mult:.2f}x")
                         print("=" * 200)
                         
@@ -1911,12 +1920,10 @@ class TradeTycoon:
                     print(f"   {Colors.MAGENTA}*** PRESTIGE ***{Colors.RESET}")
                     print("=" * 200)
 
-                    # --- UPDATED: Dynamic Math for Prestige ---
-                    mult = 1.01 ** getattr(self, 'completed_jobs', 0)
-                    bonus_gp = int((self.total_score ** (1/5.0)) * self.week * mult)
+                    # --- NEW: Call the helper method to get the synced stats ---
+                    mult, allowed_slots = self.get_prestige_perks()
                     
-                    allowed_slots = 1 + (getattr(self, 'completed_jobs', 0) // 10)
-                    allowed_slots = min(allowed_slots, len(self.artifacts))
+                    bonus_gp = int((self.total_score ** (1/5.0)) * self.week * mult)
 
                     print(f"  You have cornered the market and unlocked every good in the realm!")
                     print(f"  If you Prestige, your empire will reset, but you will retain the following perks:")
