@@ -215,21 +215,20 @@ class TradeTycoon:
                 if not pool: continue
                 target_item = random.choice(pool)
                 
-                # --- NEW: Get current stock and scale 0.5x to 1.5x ---
+                # --- NEW: Get current stock and scale 0.1x - 10x ---
                 current_stock = self.inventory.get(target_item, 0)
                 
                 # If you have enough stock, scale the quest to your current inventory
                 if current_stock >= 20: 
-                    min_qty = int(current_stock * 0.5)
-                    max_qty = int(current_stock * 1.5)
+                    min_qty = int(current_stock * 0.1)
+                    max_qty = int(current_stock * 10.0)
                     qty = random.randint(min_qty, max_qty)
                 else:
                     # SAFETY FALLBACK: If your stock is empty, use the standard baseline
                     # so the quest doesn't break by asking for 0 items.
                     qty = (random.randint(10, 50) * self.week) + 100
                 
-                # Reward is slightly above normal max market price
-                normal_max = 255 + (self.unlocked_count * 5)
+                normal_max = 500 + (self.unlocked_count * 5)
                 unit_reward = normal_max + random.randint(50, 150)
                 reward = qty * unit_reward
                 
