@@ -238,7 +238,7 @@ class TradeTycoon:
                     "item": target_item,
                     "qty": qty,
                     "reward": reward,
-                    "desc": f"{Colors.GREEN}Fetch Quest:{Colors.RESET} Deliver {qty:,} {target_item}. (Reward: ${reward:,})"
+                    "desc": f"{Colors.GREEN}Fetch Quest - {target_item}:{Colors.RESET} Deliver {Colors.GREEN}{qty:,}{Colors.RESET} (Reward: ${reward:,})"
                 })
                 
             elif j_type == "sell":
@@ -1647,12 +1647,12 @@ class TradeTycoon:
                         else:
                             for idx, job in enumerate(self.active_jobs):
                                 if job['type'] == 'unlock':
-                                    status = f"Progress: {self.unlocked_count}/{job['target']}"
+                                    status = f"Progress: {self.unlocked_count} / {job['target']}"
                                 elif job['type'] == 'sell':
-                                    status = f"Progress: {job['progress']}/{job['target_qty']}"
+                                    status = f"Progress: {job['progress']} / {job['target_qty']}"
                                 elif job['type'] == 'fetch':
                                     held = self.inventory.get(job['item'], 0)
-                                    status = f"Inventory: {held:,}/{job['qty']:,}"
+                                    status = f"Inventory: {held:,} / {Colors.GREEN}{job['qty']:,}{Colors.RESET}"
                                 print(f"  [{idx + 1}] {job['desc']} | {status}")
                         
                         print(f"\n  {Colors.YELLOW}--- AVAILABLE CONTRACTS ---{Colors.RESET}")
