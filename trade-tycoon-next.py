@@ -260,7 +260,7 @@ class TradeTycoon:
                     "target_qty": qty,
                     "progress": 0,
                     "reward": reward,
-                    "desc": f"{Colors.YELLOW}Market Maker:{Colors.RESET} Sell {qty:,} {target_item} for >= ${target_price:,} each. (Bonus: ${reward:,})"
+                    "desc": f"{Colors.YELLOW}Market Maker - {target_item}:{Colors.RESET} Sell {qty:,} for {Colors.YELLOW}>= ${target_price:,}{Colors.RESET} each. (Bonus: ${reward:,})"
                 })
 
     def generate_market(self):
